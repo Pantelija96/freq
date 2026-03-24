@@ -1,8 +1,8 @@
 // src/controllers/deviceController.js
-
 const crypto = require('crypto');
 const pool = require('../config/db');
 const logger = require('../utils/logger');
+const config = require('../config/index');
 
 const provisionDevice = async (req, res) => {
     const { imei, group, app_list, device_name, device_mac } = req.body;
