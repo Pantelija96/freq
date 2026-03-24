@@ -1,31 +1,36 @@
+require('dotenv').config();
+
 const fs = require('fs');
 const https = require('https');
 const express = require('express');
 const cors = require('cors');
 const { WebSocketServer } = require('ws');
-const pool = require('./db');
 const crypto = require('crypto');
-const logger = require('./logger');
 const PDFDocument = require("pdfkit");
+
+const config = require('./config/index');
+const pool = require('./config/db');
+const logger = require('./utils/logger');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const server = https.createServer({
-    key: fs.readFileSync('./cert/server.key'),
-    cert: fs.readFileSync('./cert/server.cert')
+    key: fs.readFileSync(config.https.key),
+    cert: fs.readFileSync(config.https.cert)
 }, app);
 
 const wss = new WebSocketServer({ server });
 
 const dashboardClients = new Set();
-
 const activeDevices = new Map();
 
 const PING_INTERVAL = 30000;
-
 const MAX_MISSED_PONGS = 3;
+
+console.log(`Server starting on https://0.0.0.0:${config.port}`);
+console.log(`Environment: ${config.env}`);
 
 // HTTP ENDPOINTS
 
@@ -1865,7 +1870,7 @@ setInterval(() => {
 }, PING_INTERVAL);
 
 
-server.listen(3000, '0.0.0.0', () => {
-    console.log('Server running on https://109.72.48.188:3000');
-    console.log('Server running on https://127.0.0.1:3000');
+server.listen(config.port, '0.0.0.0', () => {
+    console.log(`Server running on https://109.72.48.188:${config.port}`);
+    console.log(`Server running on https://127.0.0.1:${config.port}`);
 });
