@@ -67,3 +67,4 @@ Developer helper endpoints:
 - `GET /api/dev/devices/:deviceId/commands?limit=20` shows recent command history
 - `GET /api/dev/logs` lists log files
 - `GET /api/dev/logs/<filename>?lines=200` tails a readable log file
+- Dev page accessible on: https://127.0.0.1:3000/dev/
