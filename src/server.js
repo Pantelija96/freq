@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const fs = require('fs');
+const path = require('path');
 const https = require('https');
 const express = require('express');
 const cors = require('cors');
@@ -8,6 +9,7 @@ const { WebSocketServer } = require('ws');
 
 const config = require('./config/index');
 const mainRouter = require('./routes/index');
+const devRouter = require('./routes/devRoutes');
 const logger = require('./utils/logger');
 const { setupWebSocketHandlers } = require('./websocket/index');
 
@@ -17,6 +19,12 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api', mainRouter);
+
+if (config.devTools.enabled) {
+    app.use('/api/dev', devRouter);
+    app.use('/dev', express.static(path.join(__dirname, '..', 'public', 'dev')));
+    logger.warn('dev_tools_enabled', { routePrefix: '/api/dev' });
+}
 
 // Health
 app.get('/health', (req, res) => {

@@ -25,6 +25,13 @@ const config = {
     auth: {
         dashboardSecret: process.env.DASHBOARD_SECRET || '',
         provisionSecret: process.env.PROVISION_SECRET || ''
+    },
+
+    devTools: {
+        enabled: process.env.DEV_TOOLS_ENABLED
+            ? process.env.DEV_TOOLS_ENABLED === 'true'
+            : (process.env.NODE_ENV || 'development') !== 'production',
+        logDir: process.env.DEV_LOG_DIR || './logs'
     }
 };
 

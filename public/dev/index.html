@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Device Dev Console</title>
+    <style>
+        :root {
+            --bg: #0f1720;
+            --panel: #172330;
+            --text: #e8eef5;
+            --muted: #9ab0c3;
+            --accent: #53c0ff;
+            --accent-2: #6fe7c8;
+            --danger: #ff6f6f;
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background:
+                radial-gradient(circle at top right, rgba(83, 192, 255, 0.14), transparent 24%),
+                radial-gradient(circle at top left, rgba(111, 231, 200, 0.12), transparent 28%),
+                linear-gradient(180deg, #0a1118 0%, var(--bg) 100%);
+            color: var(--text);
+        }
+
+        .page {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 28px 20px 48px;
+        }
+
+        .hero {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            flex-wrap: wrap;
+            margin-bottom: 22px;
+        }
+
+        .hero h1 {
+            margin: 0 0 8px;
+            font-size: 34px;
+            line-height: 1.1;
+        }
+
+        .hero p {
+            margin: 0;
+            color: var(--muted);
+            max-width: 760px;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .pill {
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--muted);
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-size: 14px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 18px;
+        }
+
+        .stack {
+            display: grid;
+            gap: 18px;
+        }
+
+        .card {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 18px 18px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .card-header h2,
+        .card-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .card-body {
+            padding: 16px 18px 18px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        select,
+        input,
+        textarea {
+            width: 100%;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(4, 10, 16, 0.75);
+            color: var(--text);
+            padding: 12px 14px;
+            font: inherit;
+        }
+
+        textarea {
+            min-height: 140px;
+            resize: vertical;
+        }
+
+        button {
+            border: 0;
+            border-radius: 12px;
+            padding: 12px 16px;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 120ms ease, opacity 120ms ease;
+        }
+
+        button:hover { transform: translateY(-1px); }
+        button:disabled { opacity: 0.6; cursor: wait; transform: none; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #4e8cff);
+            color: #041019;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+        }
+
+        .btn-danger {
+            background: rgba(255, 111, 111, 0.18);
+            color: #ffd9d9;
+        }
+
+        .quick-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .quick-grid button { min-height: 50px; }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .meta {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .meta .label {
+            display: block;
+            color: var(--muted);
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+
+        .meta .value {
+            font-size: 15px;
+            word-break: break-word;
+        }
+
+        .online { color: var(--accent-2); }
+        .offline { color: var(--danger); }
+
+        .section-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .table-wrap { overflow-x: auto; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 12px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            vertical-align: top;
+        }
+
+        th {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .badge-pending { background: rgba(255, 255, 255, 0.12); }
+        .badge-sent { background: rgba(83, 192, 255, 0.18); color: #a6e0ff; }
+        .badge-acknowledged { background: rgba(78, 140, 255, 0.2); color: #bfd4ff; }
+        .badge-done { background: rgba(111, 231, 200, 0.18); color: #cbfff1; }
+        .badge-failed { background: rgba(255, 111, 111, 0.18); color: #ffd0d0; }
+        .badge-cancelled { background: rgba(255, 190, 92, 0.2); color: #ffe0a6; }
+
+        pre {
+            margin: 0;
+            border-radius: 14px;
+            background: rgba(4, 10, 16, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #d7e3ee;
+            padding: 14px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 420px;
+        }
+
+        .message {
+            border-radius: 14px;
+            padding: 12px 14px;
+            margin-bottom: 14px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .message.info {
+            display: block;
+            background: rgba(83, 192, 255, 0.12);
+            border: 1px solid rgba(83, 192, 255, 0.22);
+        }
+
+        .message.error {
+            display: block;
+            background: rgba(255, 111, 111, 0.12);
+            border: 1px solid rgba(255, 111, 111, 0.22);
+        }
+
+        @media (max-width: 980px) {
+            .layout { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="hero">
+        <div>
+            <h1>Device Dev Console</h1>
+            <p>Use this page to send commands to a device, inspect recent command results, and review server logs without touching the protected dashboard flow.</p>
+        </div>
+        <div class="status-bar">
+            <div class="pill">Polling every 4s</div>
+            <div class="pill" id="selectedStatus">No device selected</div>
+        </div>
+    </div>
+
+    <div class="layout">
+        <div class="stack">
+            <div class="card">
+                <div class="card-header"><h2>Target Device</h2></div>
+                <div class="card-body">
+                    <label for="deviceSelect">Choose device</label>
+                    <select id="deviceSelect"></select>
+                    <div class="section-actions">
+                        <button class="btn-secondary" id="reloadDevicesBtn">Reload devices</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h2>Quick Commands</h2></div>
+                <div class="card-body">
+                    <div class="quick-grid">
+                        <button class="btn-primary" data-command="fix">Fix</button>
+                        <button class="btn-secondary" data-command="reset">Reset</button>
+                        <button class="btn-primary" data-command="enable">Enable</button>
+                        <button class="btn-danger" data-command="disable">Disable</button>
+                        <button class="btn-secondary" data-command="stats">Stats</button>
+                        <button class="btn-secondary" data-command="fix_mac">NIC Define</button>
+                        <button class="btn-secondary" data-command="reset_mac">NIC Reset</button>
+                        <button class="btn-secondary" data-command="ping">Ping</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h2>Custom Command</h2></div>
+                <div class="card-body">
+                    <div id="sendMessage" class="message"></div>
+                    <label for="commandType">Command type</label>
+                    <input id="commandType" value="ping">
+
+                    <label for="commandPayload" style="margin-top: 14px;">Payload JSON</label>
+                    <textarea id="commandPayload">{
+  "source": "dev-page"
+}</textarea>
+
+                    <div class="section-actions">
+                        <button class="btn-primary" id="sendCustomBtn">Send command</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h2>Logs</h2></div>
+                <div class="card-body">
+                    <label for="logSelect">Log file</label>
+                    <select id="logSelect"></select>
+                    <div class="section-actions">
+                        <button class="btn-secondary" id="reloadLogsBtn">Reload logs</button>
+                        <button class="btn-secondary" id="tailLogBtn">Tail selected log</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="stack">
+            <div class="card">
+                <div class="card-header"><h2>Device Summary</h2></div>
+                <div class="card-body">
+                    <div class="meta-grid" id="deviceMeta"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h3>Recent Commands</h3></div>
+                <div class="card-body table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Created</th>
+                            <th>Command</th>
+                            <th>Status</th>
+                            <th>Payload</th>
+                            <th>Result / Error</th>
+                        </tr>
+                        </thead>
+                        <tbody id="commandsTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h3>Log Tail</h3></div>
+                <div class="card-body">
+                    <pre id="logOutput">Select a log file to preview it here.</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = `${window.location.origin}/api/dev`;
+    const POLL_INTERVAL_MS = 4000;
+    const DEFAULT_DEVICE_ID = Number(new URLSearchParams(window.location.search).get('deviceId')) || 23;
+
+    const deviceSelect = document.getElementById('deviceSelect');
+    const reloadDevicesBtn = document.getElementById('reloadDevicesBtn');
+    const selectedStatus = document.getElementById('selectedStatus');
+    const deviceMeta = document.getElementById('deviceMeta');
+    const commandsTableBody = document.getElementById('commandsTableBody');
+    const commandTypeInput = document.getElementById('commandType');
+    const commandPayloadInput = document.getElementById('commandPayload');
+    const sendCustomBtn = document.getElementById('sendCustomBtn');
+    const sendMessage = document.getElementById('sendMessage');
+    const logSelect = document.getElementById('logSelect');
+    const reloadLogsBtn = document.getElementById('reloadLogsBtn');
+    const tailLogBtn = document.getElementById('tailLogBtn');
+    const logOutput = document.getElementById('logOutput');
+
+    let selectedDeviceId = DEFAULT_DEVICE_ID;
+    let devicesCache = [];
+
+    function setMessage(text, type = 'info') {
+        sendMessage.className = `message ${type}`;
+        sendMessage.textContent = text;
+    }
+
+    function clearMessage() {
+        sendMessage.className = 'message';
+        sendMessage.textContent = '';
+    }
+
+    function relativeTime(date) {
+        const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+        if (diffSeconds < 60) return `${diffSeconds}s ago`;
+        if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+        if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+        return `${Math.floor(diffSeconds / 86400)}d ago`;
+    }
+
+    function formatDate(dateValue) {
+        if (!dateValue) return '-';
+        const date = new Date(dateValue);
+        if (Number.isNaN(date.getTime())) return String(dateValue);
+        return `${date.toLocaleString()} (${relativeTime(date)})`;
+    }
+
+    function renderDeviceMeta(device) {
+        if (!device) {
+            deviceMeta.innerHTML = '<div style="color:#9ab0c3;">Choose a device to see status.</div>';
+            selectedStatus.textContent = 'No device selected';
+            return;
+        }
+
+        selectedStatus.textContent = `Device ${device.id} ${device.device_name || ''}`.trim();
+        const onlineClass = device.websocket_connected ? 'online' : 'offline';
+        const onlineText = device.websocket_connected ? 'CONNECTED' : 'OFFLINE';
+
+        const entries = [
+            ['Name', device.device_name || 'Unknown'],
+            ['IMEI', device.imei || '-'],
+            ['Group', device.group_name || 'No group'],
+            ['Socket', `<span class="${onlineClass}">${onlineText}</span>`],
+            ['DB Online', device.online ? 'true' : 'false'],
+            ['Fixer', device.fixer_enabled ? 'enabled' : 'disabled'],
+            ['MAC', device.device_mac || '-'],
+            ['IP', device.device_ip || '-'],
+            ['Last Seen', formatDate(device.last_seen)],
+            ['Session', device.session_id || '-']
+        ];
+
+        deviceMeta.innerHTML = entries.map(([label, value]) => `
+            <div class="meta">
+                <span class="label">${label}</span>
+                <div class="value">${value}</div>
+            </div>
+        `).join('');
+    }
+
+    function badgeClass(status) {
+        return `badge badge-${(status || 'pending').toLowerCase()}`;
+    }
+
+    function safeJson(value) {
+        if (value === null || value === undefined || value === '') return '-';
+        if (typeof value === 'string') return value;
+        return JSON.stringify(value, null, 2);
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;');
+    }
+
+    function renderCommands(commands) {
+        if (!commands.length) {
+            commandsTableBody.innerHTML = '<tr><td colspan="5" style="color:#9ab0c3;">No commands yet for this device.</td></tr>';
+            return;
+        }
+
+        commandsTableBody.innerHTML = commands.map((command) => `
+            <tr>
+                <td>${formatDate(command.created_at)}</td>
+                <td>${command.command}</td>
+                <td><span class="${badgeClass(command.status)}">${command.status}</span></td>
+                <td><pre>${escapeHtml(safeJson(command.payload))}</pre></td>
+                <td><pre>${escapeHtml(command.error_message || safeJson(command.result))}</pre></td>
+            </tr>
+        `).join('');
+    }
+
+    async function fetchJson(url, options) {
+        const response = await fetch(url, options);
+        let data = null;
+
+        try {
+            data = await response.json();
+        } catch {
+            data = null;
+        }
+
+        if (!response.ok) {
+            throw new Error(data?.error || `Request failed with status ${response.status}`);
+        }
+
+        return data;
+    }
+
+    async function loadDevices() {
+        const data = await fetchJson(`${API_BASE}/devices`);
+        devicesCache = data.devices || [];
+
+        const currentExists = devicesCache.some((device) => device.id === selectedDeviceId);
+        if (!currentExists && devicesCache.length > 0) {
+            selectedDeviceId = devicesCache.find((device) => device.id === DEFAULT_DEVICE_ID)?.id || devicesCache[0].id;
+        }
+
+        deviceSelect.innerHTML = devicesCache.map((device) => {
+            const onlineDot = device.websocket_connected ? '●' : '○';
+            const label = `${onlineDot} #${device.id} ${device.device_name || 'Unnamed'}${device.group_name ? ` (${device.group_name})` : ''}`;
+            return `<option value="${device.id}">${label}</option>`;
+        }).join('');
+
+        if (selectedDeviceId) {
+            deviceSelect.value = String(selectedDeviceId);
+        }
+
+        renderDeviceMeta(devicesCache.find((device) => device.id === selectedDeviceId));
+    }
+
+    async function loadCommands() {
+        if (!selectedDeviceId) {
+            renderCommands([]);
+            return;
+        }
+
+        const data = await fetchJson(`${API_BASE}/devices/${selectedDeviceId}/commands?limit=20`);
+        renderCommands(data.commands || []);
+    }
+
+    async function loadLogs() {
+        const data = await fetchJson(`${API_BASE}/logs`);
+        const files = data.files || [];
+
+        logSelect.innerHTML = files.map((file) => `
+            <option value="${file.name}">${file.name} (${Math.round(file.size / 1024)} KB)</option>
+        `).join('');
+
+        if (!logSelect.value && files.length > 0) {
+            logSelect.value = files[0].name;
+        }
+    }
+
+    async function loadSelectedLog() {
+        const filename = logSelect.value;
+        if (!filename) {
+            logOutput.textContent = 'No log file selected.';
+            return;
+        }
+
+        const data = await fetchJson(`${API_BASE}/logs/${encodeURIComponent(filename)}?lines=200`);
+        logOutput.textContent = data.content || '(empty log)';
+    }
+
+    async function sendCommand(type, payload = null) {
+        if (!selectedDeviceId) {
+            setMessage('Select a device first.', 'error');
+            return;
+        }
+
+        clearMessage();
+        sendCustomBtn.disabled = true;
+
+        try {
+            const data = await fetchJson(`${API_BASE}/devices/${selectedDeviceId}/commands`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, payload })
+            });
+
+            setMessage(`Sent "${type}" to device ${selectedDeviceId}. Delivery: ${data.delivery}. Command ID: ${data.command_id}`);
+            await Promise.all([loadDevices(), loadCommands()]);
+        } catch (error) {
+            setMessage(error.message, 'error');
+        } finally {
+            sendCustomBtn.disabled = false;
+        }
+    }
+
+    async function handleCustomSend() {
+        const type = commandTypeInput.value.trim();
+        if (!type) {
+            setMessage('Command type is required.', 'error');
+            return;
+        }
+
+        let payload = null;
+        const rawPayload = commandPayloadInput.value.trim();
+        if (rawPayload) {
+            try {
+                payload = JSON.parse(rawPayload);
+            } catch (error) {
+                setMessage(`Payload JSON is invalid: ${error.message}`, 'error');
+                return;
+            }
+        }
+
+        await sendCommand(type, payload);
+    }
+
+    async function refreshAll() {
+        try {
+            await loadDevices();
+            await loadCommands();
+        } catch (error) {
+            setMessage(error.message, 'error');
+        }
+    }
+
+    document.querySelectorAll('[data-command]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const command = button.getAttribute('data-command');
+            commandTypeInput.value = command;
+            commandPayloadInput.value = '{\n  "source": "quick-button"\n}';
+            await sendCommand(command, { source: 'quick-button' });
+        });
+    });
+
+    reloadDevicesBtn.addEventListener('click', refreshAll);
+    sendCustomBtn.addEventListener('click', handleCustomSend);
+    reloadLogsBtn.addEventListener('click', loadLogs);
+    tailLogBtn.addEventListener('click', loadSelectedLog);
+
+    deviceSelect.addEventListener('change', async () => {
+        selectedDeviceId = Number(deviceSelect.value);
+        renderDeviceMeta(devicesCache.find((device) => device.id === selectedDeviceId));
+        await loadCommands();
+    });
+
+    async function init() {
+        await Promise.all([refreshAll(), loadLogs()]);
+        if (logSelect.value) {
+            await loadSelectedLog();
+        }
+    }
+
+    init().catch((error) => setMessage(error.message, 'error'));
+    setInterval(refreshAll, POLL_INTERVAL_MS);
+</script>
+</body>
+</html>

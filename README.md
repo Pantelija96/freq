@@ -58,3 +58,12 @@ Protected routes:
 - Send `Authorization: Bearer <DASHBOARD_SECRET>` or `x-dashboard-secret: <DASHBOARD_SECRET>` for `/api/dashboard/*` and `/api/command/*`
 - Send `x-provision-secret: <PROVISION_SECRET>` for `/api/devices/provision`
 - Connect dashboard WebSocket clients to `/dashboard?token=<DASHBOARD_SECRET>`
+
+Developer helper endpoints:
+- When `DEV_TOOLS_ENABLED=true`, unguarded endpoints are under `/api/dev`
+- The companion unguarded dev page is available at `/dev/`
+- `GET /api/dev/devices` lists devices plus websocket session status
+- `POST /api/dev/devices/:deviceId/commands` sends a command body like `{ "type": "ping", "payload": { "foo": "bar" } }`
+- `GET /api/dev/devices/:deviceId/commands?limit=20` shows recent command history
+- `GET /api/dev/logs` lists log files
+- `GET /api/dev/logs/<filename>?lines=200` tails a readable log file
