@@ -25,15 +25,27 @@ async function processFrequencyBatch(deviceId, payload) {
 
     try {
         const [existing] = await pool.execute(
-            `SELECT 1 FROM processed_frequency_batches WHERE device_id=? AND batch_id=?`,
+            `SELECT status FROM processed_frequency_batches WHERE device_id=? AND batch_id=?`,
             [deviceId, batchId]
         );
-        if (existing.length > 0) return;
 
-        await pool.execute(
-            `INSERT INTO processed_frequency_batches (batch_id, device_id, status) VALUES (?, ?, 'received')`,
-            [batchId, deviceId]
-        );
+        if (existing.length > 0) {
+            if (existing[0].status !== 'failed') {
+                return;
+            }
+
+            await pool.execute(
+                `UPDATE processed_frequency_batches
+                 SET status='received', processed_at=NULL, segments_count=0, error_message=NULL
+                 WHERE device_id=? AND batch_id=?`,
+                [deviceId, batchId]
+            );
+        } else {
+            await pool.execute(
+                `INSERT INTO processed_frequency_batches (batch_id, device_id, status) VALUES (?, ?, 'received')`,
+                [batchId, deviceId]
+            );
+        }
 
         const startTs = BigInt(payload.start_timestamp || 0);
         const endTs   = BigInt(payload.end_timestamp || 0);
@@ -98,7 +110,7 @@ async function processFrequencyBatch(deviceId, payload) {
 async function markBatchProcessed(deviceId, batchId, segmentsCount) {
     await pool.execute(
         `UPDATE processed_frequency_batches 
-         SET status='processed', processed_at=CURRENT_TIMESTAMP(3), segments_count=?
+         SET status='processed', processed_at=CURRENT_TIMESTAMP(3), segments_count=?, error_message=NULL
          WHERE device_id=? AND batch_id=?`,
         [segmentsCount, deviceId, batchId]
     );
@@ -107,7 +119,7 @@ async function markBatchProcessed(deviceId, batchId, segmentsCount) {
 async function markBatchFailed(deviceId, batchId, errorMessage) {
     await pool.execute(
         `UPDATE processed_frequency_batches 
-         SET status='failed', processed_at=CURRENT_TIMESTAMP(3), segments_count=?
+         SET status='failed', processed_at=CURRENT_TIMESTAMP(3), segments_count=0, error_message=?
          WHERE device_id=? AND batch_id=?`,
         [errorMessage, deviceId, batchId]
     );

@@ -5,6 +5,7 @@ const { broadcastToDashboard } = require('./broadcaster');
 const { processFrequencyBatch } = require('../services/frequencyService');
 const { processStatsPayload, broadcastDeviceStats } = require('../services/statsService');
 const { handleDeviceDisconnect } = require('./connectionManager');
+const { authorizeDashboardRequest } = require('../middleware/auth');
 
 const PING_INTERVAL = 30000;
 const MAX_MISSED_PONGS = 3;
@@ -12,11 +13,25 @@ const MAX_MISSED_PONGS = 3;
 function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
     // Attach locals so handlers can use them
     wss.app = { locals: { activeDevices, dashboardClients } };
+    const broadcastDashboardEvent = (data) => broadcastToDashboard(data, dashboardClients);
+    const broadcastStatsToDashboard = (deviceId) => broadcastDeviceStats(
+        deviceId,
+        (payload) => broadcastDashboardEvent(payload)
+    );
 
     wss.on('connection', (ws, req) => {
+        const requestUrl = new URL(req.url || '/', 'https://localhost');
+        const isDashboard = requestUrl.pathname === '/dashboard';
 
-        const isDashboard = req.url === '/dashboard';
+        ws.activeDevices = activeDevices;
+        ws.dashboardClients = dashboardClients;
+
         if (isDashboard) {
+            if (!authorizeDashboardRequest(req)) {
+                ws.close(1008, 'Unauthorized');
+                return;
+            }
+
             dashboardClients.add(ws);
 
             ws.on('close', () => {
@@ -110,7 +125,7 @@ function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
                             session_id: sessionId
                         }));
 
-                        broadcastToDashboard({
+                        broadcastDashboardEvent({
                             type: 'device_online',
                             deviceId,
                             sessionId,
@@ -205,7 +220,7 @@ function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
 
                     processFrequencyBatch(ws.deviceId, data)
                         .then(() => {
-                            broadcastToDashboard({
+                            broadcastDashboardEvent({
                                 type: "frequency_batch",
                                 deviceId: ws.deviceId,
                                 start: data.start_timestamp,
@@ -241,7 +256,7 @@ function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
                 `, [command_id]);
 
                     if (rows.length) {
-                        broadcastToDashboard({
+                        broadcastDashboardEvent({
                             type: 'command_update',
                             command: rows[0]
                         });
@@ -287,7 +302,7 @@ function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
                         ]
                     );
 
-                    broadcastToDashboard({
+                    broadcastDashboardEvent({
                         type: 'command_result',
                         deviceId: ws.deviceId,
                         commandId: data.command_id,
@@ -318,8 +333,7 @@ function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
                         received_at: Date.now()
                     }));
 
-                    processStatsPayload(ws.deviceId, data)
-                        .then(()=> broadcastDeviceStats(ws.deviceId))
+                    processStatsPayload(ws.deviceId, data, broadcastStatsToDashboard)
                         .catch(err => {
                             logger.error('stats_processing_failed', {
                                 deviceId: ws.deviceId,
@@ -364,7 +378,7 @@ function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
                                 [ws.deviceId]
                             );
 
-                            broadcastToDashboard({
+                            broadcastDashboardEvent({
                                 type: 'device_logout',
                                 deviceId: ws.deviceId,
                                 sessionId: ws.sessionId,
@@ -372,16 +386,22 @@ function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
                                 reason: "logout"
                             });
 
+                            const activeSession = activeDevices.get(ws.deviceId);
+                            if (activeSession?.sessionId === ws.sessionId) {
+                                activeDevices.delete(ws.deviceId);
+                            }
+
                             logger.info('device_user_logout', {
                                 deviceId: ws.deviceId,
                                 sessionId: ws.sessionId
                             });
 
+                            ws.skipDisconnectCleanup = true;
                             ws.terminate();
                             return;
                         }
 
-                        broadcastToDashboard({
+                        broadcastDashboardEvent({
                             type: 'device_user_action',
                             deviceId: ws.deviceId,
                             action,
@@ -412,8 +432,12 @@ function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
         });
 
         ws.on('close', async () => {
+            if (ws.skipDisconnectCleanup) {
+                return;
+            }
+
             try {
-                await handleDeviceDisconnect(ws, "socket_closed");
+                await handleDeviceDisconnect(ws, ws.disconnectReason || "socket_closed");
             } catch (err) {
                 logger.error('disconnect_handler_failed', {
                     error: err.message
@@ -428,8 +452,9 @@ function setupWebSocketHandlers(wss, dashboardClients, activeDevices) {
         wss.clients.forEach((ws) => {
             if (!ws.deviceId) return;
             if (ws.missedPongs >= MAX_MISSED_PONGS) {
-                handleDeviceDisconnect(ws, dashboardClients, "ping_timeout");
-                return ws.terminate();
+                ws.disconnectReason = "ping_timeout";
+                ws.terminate();
+                return;
             }
             ws.missedPongs++;
             ws.ping();

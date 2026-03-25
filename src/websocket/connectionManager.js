@@ -2,10 +2,11 @@ const pool = require('../config/db');
 const logger = require('../utils/logger');
 const { broadcastToDashboard } = require('./broadcaster');
 
-async function handleDeviceDisconnect(ws, dashboardClients, reason = "connection_lost") {
+async function handleDeviceDisconnect(ws, reason = "connection_lost") {
     if (!ws?.deviceId) return;
 
-    const activeDevices = ws.activeDevices || ws.locals?.activeDevices;
+    const activeDevices = ws.activeDevices;
+    const dashboardClients = ws.dashboardClients;
     if (!activeDevices) return;
 
     const active = activeDevices.get(ws.deviceId);

@@ -77,7 +77,9 @@ async function processStatsPayload(deviceId, payload, broadcastDeviceStatsFn) {
             deviceId, boot_time, appsCount: apps.length, crashesCount: crashes.length, deviceStatId
         });
 
-        if (broadcastDeviceStatsFn) broadcastDeviceStatsFn(deviceId);
+        if (broadcastDeviceStatsFn) {
+            await broadcastDeviceStatsFn(deviceId);
+        }
     } catch (err) {
         logger.error('processStatsPayload_failed', { deviceId, error: err.message });
     }
@@ -92,6 +94,10 @@ function parseAndroidCrashTime(timeStr) {
 }
 
 async function broadcastDeviceStats(deviceId, broadcastFn) {
+    if (typeof broadcastFn !== 'function') {
+        return;
+    }
+
     const [stats] = await pool.execute(`
         SELECT id, boot_time, collected_at FROM device_stats 
         WHERE device_id = ? ORDER BY collected_at DESC LIMIT 1

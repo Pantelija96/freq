@@ -63,8 +63,10 @@ const provisionDevice = async (req, res) => {
             finalToken = deviceRows[0].device_token;
 
             await connection.execute(
-                `UPDATE devices SET device_name = ?, group_id = ? WHERE id = ?`,
-                [device_name || null, groupId, deviceId]
+                `UPDATE devices
+                 SET device_name = ?, group_id = ?, device_mac = ?, device_ip = ?
+                 WHERE id = ?`,
+                [device_name || null, groupId, device_mac || null, req.ip, deviceId]
             );
         }
 

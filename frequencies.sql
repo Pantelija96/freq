@@ -83,6 +83,8 @@ CREATE TABLE `devices` (
   `device_name` varchar(255) DEFAULT NULL,
   `group_id` int(11) DEFAULT NULL,
   `device_token` varchar(255) DEFAULT NULL,
+  `device_mac` varchar(64) DEFAULT NULL,
+  `device_ip` varchar(64) DEFAULT NULL,
   `last_seen` datetime DEFAULT NULL,
   `online` tinyint(1) DEFAULT 0,
   `created_at` datetime DEFAULT current_timestamp(),
@@ -181,6 +183,7 @@ CREATE TABLE `processed_frequency_batches` (
   `received_at` timestamp(3) NOT NULL DEFAULT current_timestamp(3),
   `processed_at` timestamp(3) NULL DEFAULT NULL,
   `segments_count` int(10) UNSIGNED DEFAULT 0,
+  `error_message` text DEFAULT NULL,
   `status` enum('received','processed','failed') DEFAULT 'received'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 

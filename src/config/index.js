@@ -20,7 +20,12 @@ const config = {
         cert: process.env.CERT_CERT || './cert/server.cert'
     },
 
-    wssUrl: process.env.WSS_URL || 'wss://192.168.1.4:3000'
+    wssUrl: process.env.WSS_URL || 'wss://192.168.1.4:3000',
+
+    auth: {
+        dashboardSecret: process.env.DASHBOARD_SECRET || '',
+        provisionSecret: process.env.PROVISION_SECRET || ''
+    }
 };
 
 module.exports = config;
