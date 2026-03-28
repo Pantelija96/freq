@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Freq Backend Admin Guide</title>
+  <style>
+    :root {
+      --bg: #0b1731;
+      --surface: #12284f;
+      --surface-2: #1b335f;
+      --accent: #3e5ea7;
+      --text: #eef4ff;
+      --muted: #c0d0f4;
+      --border: rgba(192, 208, 244, 0.2);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto 18px;
+      padding: 18mm;
+      background:
+        radial-gradient(circle at top right, rgba(62, 94, 167, 0.18), transparent 28%),
+        linear-gradient(180deg, var(--surface) 0%, var(--bg) 48%, #081226 100%);
+      page-break-after: always;
+      position: relative;
+    }
+
+    .page:last-child { page-break-after: auto; }
+    .cover {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      gap: 14px;
+    }
+
+    .logo {
+      width: 120px;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 28px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.26);
+    }
+
+    .eyebrow {
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    h1, h2 { margin: 0; }
+    h1 { font-size: 34px; }
+    h2 { font-size: 22px; }
+
+    .subtitle { color: var(--muted); max-width: 700px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid var(--border); vertical-align: top; }
+    th { background: var(--surface-2); text-align: left; }
+
+    .panel {
+      background: rgba(11, 23, 49, 0.3);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+
+    .section-title {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+    }
+
+    .footer {
+      position: absolute;
+      left: 18mm;
+      right: 18mm;
+      bottom: 12mm;
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    ul { margin: 8px 0 0 18px; }
+    li { margin: 4px 0; }
+
+    @media print {
+      body { background: transparent; }
+      .page { margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <img class="logo" src="./assets/freq-logo.jfif" alt="Freq logo" />
+    <div class="eyebrow">Freq Suite</div>
+    <h1>Backend Admin Guide</h1>
+    <p class="subtitle">
+      Operational reference for environment setup, device onboarding, authentication,
+      WebSocket behavior, analytics, and reporting in the Freq backend service.
+    </p>
+    <table>
+      <tr>
+        <th>Service Version</th>
+        <th>Document Date</th>
+        <th>Contents</th>
+      </tr>
+      <tr>
+        <td>Freq Backend v1.0</td>
+        <td>March 2026</td>
+        <td>Configuration, routes, roles, provisioning, live flow, reports, and troubleshooting.</td>
+      </tr>
+    </table>
+    <div class="footer">
+      <span>Freq Backend Admin Guide</span>
+      <span>Page 1</span>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section-title"><h2>1. Service Overview</h2></div>
+    <p>
+      The backend provides REST APIs, dashboard authentication, device provisioning,
+      dashboard WebSocket events, PDF reporting, and frequency analytics built from
+      ingested device data.
+    </p>
+    <div class="panel">
+      Core backend responsibilities:
+      <ul>
+        <li>Register and authenticate devices</li>
+        <li>Maintain live dashboard and device session state</li>
+        <li>Store commands, crashes, statistics, and frequency segments</li>
+        <li>Generate licences and PDF reports</li>
+      </ul>
+    </div>
+    <div class="footer">
+      <span>Freq Backend Admin Guide</span>
+      <span>Page 2</span>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section-title"><h2>2. Authentication and Roles</h2></div>
+    <table>
+      <tr>
+        <th>Area</th>
+        <th>Description</th>
+      </tr>
+      <tr>
+        <td>Dashboard login</td>
+        <td>Uses `/api/auth/login` and returns a JWT token for frontend sessions.</td>
+      </tr>
+      <tr>
+        <td>Admin role</td>
+        <td>Can view all pages and send commands to devices.</td>
+      </tr>
+      <tr>
+        <td>User role</td>
+        <td>Can view all data but cannot dispatch commands.</td>
+      </tr>
+      <tr>
+        <td>Device login</td>
+        <td>Returns the device identifier and WebSocket address used for the live tunnel.</td>
+      </tr>
+    </table>
+    <div class="panel">
+      The backend currently supports local dashboard authentication, while remaining
+      structured for future LDAP or Active Directory integration.
+    </div>
+    <div class="footer">
+      <span>Freq Backend Admin Guide</span>
+      <span>Page 3</span>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section-title"><h2>3. Device Provisioning and Live Flow</h2></div>
+    <p>
+      Devices use the open provisioning flow intended for the internal cruise-ship
+      environment. Provisioning creates or updates device registration data and enables
+      the device to proceed into login and WebSocket authentication.
+    </p>
+    <table>
+      <tr>
+        <th>Step</th>
+        <th>Result</th>
+      </tr>
+      <tr>
+        <td>`/api/devices/provision`</td>
+        <td>Registers the device and returns the provisioning result.</td>
+      </tr>
+      <tr>
+        <td>`/api/devices/login`</td>
+        <td>Returns device login result and `WSS_URL` for live connection.</td>
+      </tr>
+      <tr>
+        <td>WebSocket `auth`</td>
+        <td>Marks the device online and starts live dashboard updates.</td>
+      </tr>
+      <tr>
+        <td>Device logout or disconnect</td>
+        <td>Marks the device offline and broadcasts the session change.</td>
+      </tr>
+    </table>
+    <div class="footer">
+      <span>Freq Backend Admin Guide</span>
+      <span>Page 4</span>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section-title"><h2>4. Analytics and Reporting</h2></div>
+    <p>
+      Frequency data is ingested as segments and analyzed into fixed sessions.
+      The backend correlates crashes against these sessions and surfaces summary
+      values to both the frontend and the generated device report PDF.
+    </p>
+    <ul>
+      <li>Total observed time</li>
+      <li>Total fixed time</li>
+      <li>Fixed session count</li>
+      <li>Crashes during fixed sessions</li>
+      <li>Crashes outside fixed sessions</li>
+      <li>Top fixed frequencies for small and big cores</li>
+    </ul>
+    <div class="panel">
+      Reports are generated one device per page and include a frequency summary,
+      fixed-session rows, and crash history.
+    </div>
+    <div class="footer">
+      <span>Freq Backend Admin Guide</span>
+      <span>Page 5</span>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section-title"><h2>5. Quick Reference</h2></div>
+    <table>
+      <tr>
+        <th>Administrator action</th>
+        <th>Result</th>
+      </tr>
+      <tr>
+        <td>Configure `.env` and restart the backend</td>
+        <td>Applies updated secrets, public WebSocket host, and runtime settings.</td>
+      </tr>
+      <tr>
+        <td>Create a dashboard user</td>
+        <td>Adds an `admin` or `user` account for frontend access.</td>
+      </tr>
+      <tr>
+        <td>Run the demo seed route</td>
+        <td>Populates groups, devices, licences, commands, crashes, and frequency data.</td>
+      </tr>
+      <tr>
+        <td>Review one-device analytics</td>
+        <td>Confirms fixed sessions and crash correlation are computed correctly.</td>
+      </tr>
+      <tr>
+        <td>Generate a report</td>
+        <td>Produces a multi-page PDF with one page per selected device.</td>
+      </tr>
+    </table>
+    <div class="panel">End of guide.</div>
+    <div class="footer">
+      <span>Freq Backend Admin Guide</span>
+      <span>Page 6</span>
+    </div>
+  </section>
+</body>
+</html>

@@ -1,7 +1,19 @@
 const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
 
 const pool = require('../config/db');
 const { buildFrequencyAnalytics, formatDuration } = require('./frequencyAnalyticsService');
+
+const REPORT_COLORS = {
+    background: '#0b1731',
+    surface: '#12284f',
+    surfaceAlt: '#1b335f',
+    accent: '#3e5ea7',
+    text: '#eef4ff',
+    muted: '#b9c9ef'
+};
+const LOGO_PATH = path.resolve(__dirname, '../../docs/assets/freq-logo.jfif');
 
 async function generateDeviceReport(res, options = {}) {
     const selectedDeviceIds = normalizeDeviceIds(options.deviceIds);
@@ -45,8 +57,11 @@ async function generateDeviceReport(res, options = {}) {
 function renderDevicePage(doc, device, details) {
     const analytics = buildFrequencyAnalytics(details.frequencySegments, details.crashes);
 
+    renderPageBackground(doc);
+    renderLogo(doc);
     doc.fontSize(20).text(device.device_name || `Device ${device.id}`, { align: 'left' });
     doc.moveDown(0.35);
+    doc.fillColor(REPORT_COLORS.text);
     doc.fontSize(10);
     doc.text(`Device ID: ${device.id}`);
     doc.text(`IMEI: ${device.imei || '-'}`);
@@ -55,28 +70,28 @@ function renderDevicePage(doc, device, details) {
     doc.text(`Last Seen: ${formatDateTime(device.last_seen)}`);
     doc.moveDown(1);
 
-    doc.fontSize(14).text('Frequency Summary');
+    renderSectionTitle(doc, 'Frequency Summary');
     doc.moveDown(0.35);
     renderSummaryGrid(doc, analytics.summary);
     doc.moveDown(1.1);
 
-    doc.fontSize(14).text('Fixed Frequency Sessions');
+    renderSectionTitle(doc, 'Fixed Frequency Sessions');
     doc.moveDown(0.35);
 
     if (!analytics.fixedSessions.length) {
-        doc.fontSize(10).fillColor('#888888').text('No fixed frequency sessions detected.');
-        doc.fillColor('#000000');
+        doc.fontSize(10).fillColor(REPORT_COLORS.muted).text('No fixed frequency sessions detected.');
+        doc.fillColor(REPORT_COLORS.text);
     } else {
         renderFrequencyTable(doc, analytics.fixedSessions);
     }
 
     doc.moveDown(1.1);
-    doc.fontSize(14).text('Application Crashes');
+    renderSectionTitle(doc, 'Application Crashes');
     doc.moveDown(0.35);
 
     if (!details.crashes.length) {
-        doc.fontSize(10).fillColor('#888888').text('No crashes recorded.');
-        doc.fillColor('#000000');
+        doc.fontSize(10).fillColor(REPORT_COLORS.muted).text('No crashes recorded.');
+        doc.fillColor(REPORT_COLORS.text);
     } else {
         renderCrashesTable(doc, details.crashes);
     }
@@ -98,10 +113,10 @@ function renderFrequencyTable(doc, segments) {
 
     if (segments.length > visibleSegments.length) {
         doc.moveDown(0.25);
-        doc.fontSize(9).fillColor('#666666').text(
+        doc.fontSize(9).fillColor(REPORT_COLORS.muted).text(
             `Showing ${visibleSegments.length} of ${segments.length} total frequency segments.`
         );
-        doc.fillColor('#000000');
+        doc.fillColor(REPORT_COLORS.text);
     }
 }
 
@@ -132,18 +147,18 @@ function renderCrashesTable(doc, crashes) {
 
     if (crashes.length > visibleCrashes.length) {
         doc.moveDown(0.25);
-        doc.fontSize(9).fillColor('#666666').text(
+        doc.fontSize(9).fillColor(REPORT_COLORS.muted).text(
             `Showing ${visibleCrashes.length} of ${crashes.length} total crash events.`
         );
-        doc.fillColor('#000000');
+        doc.fillColor(REPORT_COLORS.text);
     }
 }
 
 function renderTableHeader(doc, columns) {
-    doc.fontSize(10).fillColor('#ffffff');
+    doc.fontSize(10).fillColor(REPORT_COLORS.text);
     const top = doc.y;
-    doc.rect(42, top - 2, 510, 20).fill('#222222');
-    doc.fillColor('#ffffff');
+    doc.roundedRect(42, top - 2, 510, 20, 6).fill(REPORT_COLORS.surfaceAlt);
+    doc.fillColor(REPORT_COLORS.text);
 
     let x = 48;
     columns.forEach((column, index) => {
@@ -155,7 +170,7 @@ function renderTableHeader(doc, columns) {
     });
 
     doc.moveDown(1.4);
-    doc.fillColor('#000000');
+    doc.fillColor(REPORT_COLORS.text);
 }
 
 function renderTableRow(doc, columns) {
@@ -163,7 +178,7 @@ function renderTableRow(doc, columns) {
     let x = 48;
 
     columns.forEach((column, index) => {
-        doc.fontSize(9).text(String(column), x, rowTop, {
+        doc.fontSize(9).fillColor(REPORT_COLORS.text).text(String(column), x, rowTop, {
             width: getColumnWidth(columns.length, index),
             ellipsis: true
         });
@@ -303,6 +318,33 @@ function formatFrequency(value) {
     }
 
     return `${(Number(value) / 1000).toFixed(1)} MHz`;
+}
+
+function renderPageBackground(doc) {
+    doc.save();
+    doc.rect(0, 0, doc.page.width, doc.page.height).fill(REPORT_COLORS.background);
+    doc.restore();
+    doc.fillColor(REPORT_COLORS.text);
+}
+
+function renderLogo(doc) {
+    if (!fs.existsSync(LOGO_PATH)) {
+        return;
+    }
+
+    doc.image(LOGO_PATH, 42, 32, {
+        width: 42,
+        height: 42
+    });
+    doc.y = Math.max(doc.y, 84);
+}
+
+function renderSectionTitle(doc, title) {
+    const y = doc.y;
+    doc.roundedRect(42, y - 2, 510, 22, 6).fill(REPORT_COLORS.surface);
+    doc.fillColor(REPORT_COLORS.text);
+    doc.fontSize(14).text(title, 54, y + 3);
+    doc.moveDown(1.2);
 }
 
 function truncateText(value, maxLength) {
