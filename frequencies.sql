@@ -174,6 +174,36 @@ CREATE TABLE `groups` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `licences`
+--
+
+CREATE TABLE `licences` (
+  `id` int(11) NOT NULL,
+  `device_id` int(11) NOT NULL,
+  `licence_key` char(64) NOT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `users`
+--
+
+CREATE TABLE `users` (
+  `id` int(11) NOT NULL,
+  `username` varchar(120) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `role` enum('admin','user') NOT NULL DEFAULT 'user',
+  `first_name` varchar(120) DEFAULT NULL,
+  `last_name` varchar(120) DEFAULT NULL,
+  `last_login` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `processed_frequency_batches`
 --
 
@@ -272,6 +302,21 @@ ALTER TABLE `groups`
   ADD UNIQUE KEY `name` (`name`);
 
 --
+-- Indexes for table `licences`
+--
+ALTER TABLE `licences`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `device_id` (`device_id`),
+  ADD UNIQUE KEY `licence_key` (`licence_key`);
+
+--
+-- Indexes for table `users`
+--
+ALTER TABLE `users`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `username` (`username`);
+
+--
 -- Indexes for table `processed_frequency_batches`
 --
 ALTER TABLE `processed_frequency_batches`
@@ -338,6 +383,18 @@ ALTER TABLE `groups`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
 
 --
+-- AUTO_INCREMENT for table `licences`
+--
+ALTER TABLE `licences`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `users`
+--
+ALTER TABLE `users`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
 -- Constraints for dumped tables
 --
 
@@ -379,6 +436,12 @@ ALTER TABLE `device_app_stats`
 --
 ALTER TABLE `device_user_actions`
   ADD CONSTRAINT `fk_user_action_device` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `licences`
+--
+ALTER TABLE `licences`
+  ADD CONSTRAINT `fk_licence_device` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

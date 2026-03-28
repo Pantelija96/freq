@@ -1,186 +1,319 @@
-const PDFDocument = require("pdfkit");
+const PDFDocument = require('pdfkit');
+
 const pool = require('../config/db');
+const { buildFrequencyAnalytics, formatDuration } = require('./frequencyAnalyticsService');
 
-const generateDeviceReport = async (res) => {
-    try {
-        const [devices] = await pool.query(`
-            SELECT d.id, d.device_name, d.device_token, d.imei, d.device_mac, 
-                   d.online, d.last_seen, COALESCE(g.name,'No group') AS group_name
-            FROM devices d
-            LEFT JOIN groups g ON d.group_id = g.id
-            ORDER BY d.device_name
-        `);
+async function generateDeviceReport(res, options = {}) {
+    const selectedDeviceIds = normalizeDeviceIds(options.deviceIds);
+    const devices = await loadDevices(selectedDeviceIds);
 
-        const online = devices.filter(d => d.online).length;
-        const offline = devices.length - online;
+    if (!devices.length) {
+        res.status(404).json({ error: 'No devices found for the requested report' });
+        return;
+    }
 
-        const appStats = {};
-        const crashStats = {};
-        const commandStats = {};
-        const actionStats = {};
-        const freqStats = {};
-        const freqBatches = {};
+    const deviceIds = devices.map((device) => device.id);
+    const frequencySegmentsByDevice = await loadFrequencySegments(deviceIds);
+    const crashesByDevice = await loadCrashes(deviceIds);
 
-        for (const d of devices) {
-            const [[latestStat]] = await pool.query(`
-                SELECT id FROM device_stats WHERE device_id = ? ORDER BY collected_at DESC LIMIT 1
-            `, [d.id]);
+    const doc = new PDFDocument({
+        margin: 42,
+        autoFirstPage: true
+    });
 
-            if (latestStat) {
-                const [apps] = await pool.query(`
-                    SELECT COALESCE(a.app_name,a.package_name) AS app_name, s.cpu_time_sec, 
-                           s.battery_pct, s.received_mb, s.transmitted_mb
-                    FROM device_app_stats s
-                    JOIN applications a ON s.application_id = a.id
-                    WHERE s.device_stat_id = ?
-                    ORDER BY s.battery_pct DESC LIMIT 10
-                `, [latestStat.id]);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=device_report_${Date.now()}.pdf`
+    );
+    doc.pipe(res);
 
-                const [crashes] = await pool.query(`
-                    SELECT COALESCE(a.app_name,a.package_name) AS app_name, c.crash_time, c.reason
-                    FROM device_app_crashes c
-                    JOIN applications a ON c.application_id = a.id
-                    WHERE c.device_stat_id = ?
-                    ORDER BY c.created_at DESC LIMIT 10
-                `, [latestStat.id]);
-
-                appStats[d.id] = apps;
-                crashStats[d.id] = crashes;
-            } else {
-                appStats[d.id] = [];
-                crashStats[d.id] = [];
-            }
-
-            const [commands] = await pool.query(`
-                SELECT command, status, created_at FROM commands 
-                WHERE device_id = ? ORDER BY created_at DESC LIMIT 5
-            `, [d.id]);
-            commandStats[d.id] = commands;
-
-            const [actions] = await pool.query(`
-                SELECT action, created_at FROM device_user_actions 
-                WHERE device_id = ? ORDER BY created_at DESC LIMIT 5
-            `, [d.id]);
-            actionStats[d.id] = actions;
-
-            const [freq] = await pool.query(`
-                SELECT core_type, AVG(frequency_khz) avg_freq, MAX(frequency_khz) max_freq, COUNT(*) samples
-                FROM cpu_frequency_segments WHERE device_id = ? GROUP BY core_type
-            `, [d.id]);
-            freqStats[d.id] = freq;
-
-            const [[batch]] = await pool.query(`
-                SELECT COUNT(*) batches, SUM(segments_count) segments
-                FROM processed_frequency_batches WHERE device_id = ?
-            `, [d.id]);
-            freqBatches[d.id] = batch;
-        }
-
-        const doc = new PDFDocument({ margin: 40 });
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `attachment; filename=device_report_${Date.now()}.pdf`);
-        doc.pipe(res);
-
-        doc.fontSize(22).text("Device Efficiency Management Report", { align: "center" });
-        doc.moveDown();
-        doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`, { align: "center" });
-        doc.moveDown(2);
-
-        doc.fontSize(16).text("System Summary");
-        doc.moveDown();
-        doc.fontSize(12);
-        doc.text(`Total Devices: ${devices.length}`, 40, doc.y);
-        doc.text(`Online Devices: ${online}`, 40, doc.y);
-        doc.text(`Offline Devices: ${offline}`, 40, doc.y);
-        doc.moveDown(2);
-
-        for (const device of devices) {
-            doc.fontSize(16).text(`Device: ${device.device_name}`);
-            doc.moveDown(0.5);
-            doc.fontSize(11);
-            doc.text(`Licence Key: ${device.device_token}`, 40, doc.y);
-            doc.text(`IMEI: ${device.imei}`, 40, doc.y);
-            doc.text(`MAC: ${device.device_mac}`, 40, doc.y);
-            doc.text(`Group: ${device.group_name}`, 40, doc.y);
-            doc.text(`Status: ${device.online ? "ONLINE" : "OFFLINE"}`, 40, doc.y);
-            doc.text(`Last Seen: ${device.last_seen || "-"}`, 40, doc.y);
-            doc.moveDown();
-
-            // CPU Frequency
-            doc.fontSize(14).text("CPU Frequency Analysis");
-            doc.moveDown(0.5);
-            freqStats[device.id].forEach(f => {
-                doc.fontSize(10).text(
-                    `${f.core_type.toUpperCase()} cores\nAvg ${(f.avg_freq/1000).toFixed(1)} MHz\nMax ${(f.max_freq/1000).toFixed(1)} MHz\nSamples ${f.samples}`,
-                    40, doc.y
-                );
-                doc.moveDown(0.5);
-            });
-
-            // Batch info
-            const batch = freqBatches[device.id];
-            doc.fontSize(14).text("Frequency Processing");
-            doc.moveDown(0.5);
-            doc.fontSize(10).text(`Batches processed: ${batch.batches || 0}`, 40, doc.y);
-            doc.text(`Segments analyzed: ${batch.segments || 0}`, 40, doc.y);
-            doc.moveDown();
-
-            // Top Apps
-            doc.fontSize(14).text("Top Applications");
-            doc.moveDown(0.5);
-            const apps = appStats[device.id];
-            if (apps.length === 0) {
-                doc.fontSize(10).text("No statistics available", 40, doc.y);
-            } else {
-                apps.forEach(a => {
-                    doc.fontSize(10).text(
-                        `${a.app_name}\nCPU ${a.cpu_time_sec.toFixed(2)}s\nBattery ${(a.battery_pct).toFixed(2)}%\nRX ${a.received_mb.toFixed(2)} MB\nTX ${a.transmitted_mb.toFixed(2)} MB`,
-                        40, doc.y
-                    );
-                    doc.moveDown(0.5);
-                });
-            }
-            doc.moveDown();
-
-            // Crashes
-            doc.fontSize(14).text("Crash History");
-            doc.moveDown(0.5);
-            const crashes = crashStats[device.id];
-            if (crashes.length === 0) {
-                doc.fontSize(10).text("No crashes recorded", 40, doc.y);
-            } else {
-                crashes.forEach(c => {
-                    doc.fontSize(10).text(`${c.crash_time} - ${c.app_name} (${c.reason || "Unknown"})`, 40, doc.y);
-                });
-            }
-            doc.moveDown();
-
-            // Commands
-            doc.fontSize(14).text("Recent Commands");
-            doc.moveDown(0.5);
-            commandStats[device.id].forEach(cmd => {
-                doc.fontSize(10).text(`${cmd.created_at} - ${cmd.command} (${cmd.status})`, 40, doc.y);
-            });
-            doc.moveDown();
-
-            // User Actions
-            doc.fontSize(14).text("Recent User Actions");
-            doc.moveDown(0.5);
-            actionStats[device.id].forEach(a => {
-                doc.fontSize(10).text(`${a.created_at} - ${a.action}`, 40, doc.y);
-            });
-
+    devices.forEach((device, index) => {
+        if (index > 0) {
             doc.addPage();
         }
 
-        doc.end();
+        renderDevicePage(doc, device, {
+            frequencySegments: frequencySegmentsByDevice.get(device.id) || [],
+            crashes: crashesByDevice.get(device.id) || []
+        });
+    });
 
-    } catch (err) {
-        console.error(err);
-        if (!res.headersSent) {
-            res.status(500).json({ status: "error", message: "Failed to generate report" });
-        }
+    doc.end();
+}
+
+function renderDevicePage(doc, device, details) {
+    const analytics = buildFrequencyAnalytics(details.frequencySegments, details.crashes);
+
+    doc.fontSize(20).text(device.device_name || `Device ${device.id}`, { align: 'left' });
+    doc.moveDown(0.35);
+    doc.fontSize(10);
+    doc.text(`Device ID: ${device.id}`);
+    doc.text(`IMEI: ${device.imei || '-'}`);
+    doc.text(`Group: ${device.group_name || 'No group'}`);
+    doc.text(`Status: ${device.online ? 'ONLINE' : 'OFFLINE'}`);
+    doc.text(`Last Seen: ${formatDateTime(device.last_seen)}`);
+    doc.moveDown(1);
+
+    doc.fontSize(14).text('Frequency Summary');
+    doc.moveDown(0.35);
+    renderSummaryGrid(doc, analytics.summary);
+    doc.moveDown(1.1);
+
+    doc.fontSize(14).text('Fixed Frequency Sessions');
+    doc.moveDown(0.35);
+
+    if (!analytics.fixedSessions.length) {
+        doc.fontSize(10).fillColor('#888888').text('No fixed frequency sessions detected.');
+        doc.fillColor('#000000');
+    } else {
+        renderFrequencyTable(doc, analytics.fixedSessions);
     }
-};
 
-module.exports = { generateDeviceReport };
+    doc.moveDown(1.1);
+    doc.fontSize(14).text('Application Crashes');
+    doc.moveDown(0.35);
+
+    if (!details.crashes.length) {
+        doc.fontSize(10).fillColor('#888888').text('No crashes recorded.');
+        doc.fillColor('#000000');
+    } else {
+        renderCrashesTable(doc, details.crashes);
+    }
+}
+
+function renderFrequencyTable(doc, segments) {
+    const visibleSegments = segments.slice(0, 20);
+    renderTableHeader(doc, ['Start', 'End', 'Duration', 'Small', 'Big']);
+
+    visibleSegments.forEach((segment) => {
+        renderTableRow(doc, [
+            formatDateTime(segment.start_timestamp),
+            formatDateTime(segment.end_timestamp),
+            formatDuration(segment.duration_ms),
+            formatFrequency(segment.small_frequency_khz),
+            formatFrequency(segment.big_frequency_khz)
+        ]);
+    });
+
+    if (segments.length > visibleSegments.length) {
+        doc.moveDown(0.25);
+        doc.fontSize(9).fillColor('#666666').text(
+            `Showing ${visibleSegments.length} of ${segments.length} total frequency segments.`
+        );
+        doc.fillColor('#000000');
+    }
+}
+
+function renderSummaryGrid(doc, summary) {
+    const rows = [
+        ['Observed Time', formatDuration(summary.total_observed_ms), 'Fixed Time', formatDuration(summary.fixed_time_ms)],
+        ['Fixed %', `${summary.fixed_percent || 0}%`, 'Fixed Sessions', String(summary.fixed_session_count || 0)],
+        ['Crashes During Fixed', String(summary.crashes_during_fixed || 0), 'Crashes Outside Fixed', String(summary.crashes_outside_fixed || 0)],
+        ['Top Small Fixed', formatFrequency(summary.top_small_fixed_freq_khz), 'Top Big Fixed', formatFrequency(summary.top_big_fixed_freq_khz)]
+    ];
+
+    rows.forEach((row) => {
+        renderTableRow(doc, row);
+    });
+}
+
+function renderCrashesTable(doc, crashes) {
+    const visibleCrashes = crashes.slice(0, 20);
+    renderTableHeader(doc, ['Timestamp', 'App', 'Reason']);
+
+    visibleCrashes.forEach((crash) => {
+        renderTableRow(doc, [
+            formatDateTime(crash.crash_time),
+            crash.app_name || crash.package_name || 'Unknown',
+            truncateText(crash.reason || 'Unknown', 72)
+        ]);
+    });
+
+    if (crashes.length > visibleCrashes.length) {
+        doc.moveDown(0.25);
+        doc.fontSize(9).fillColor('#666666').text(
+            `Showing ${visibleCrashes.length} of ${crashes.length} total crash events.`
+        );
+        doc.fillColor('#000000');
+    }
+}
+
+function renderTableHeader(doc, columns) {
+    doc.fontSize(10).fillColor('#ffffff');
+    const top = doc.y;
+    doc.rect(42, top - 2, 510, 20).fill('#222222');
+    doc.fillColor('#ffffff');
+
+    let x = 48;
+    columns.forEach((column, index) => {
+        doc.text(column, x, top + 3, {
+            width: getColumnWidth(columns.length, index),
+            ellipsis: true
+        });
+        x += getColumnWidth(columns.length, index);
+    });
+
+    doc.moveDown(1.4);
+    doc.fillColor('#000000');
+}
+
+function renderTableRow(doc, columns) {
+    const rowTop = doc.y;
+    let x = 48;
+
+    columns.forEach((column, index) => {
+        doc.fontSize(9).text(String(column), x, rowTop, {
+            width: getColumnWidth(columns.length, index),
+            ellipsis: true
+        });
+        x += getColumnWidth(columns.length, index);
+    });
+
+    doc.moveDown(1.2);
+}
+
+function getColumnWidth(columnCount, index) {
+    if (columnCount === 5) {
+        return [55, 120, 120, 85, 110][index];
+    }
+
+    if (columnCount === 4) {
+        return [125, 120, 125, 120][index];
+    }
+
+    if (columnCount === 3) {
+        return [120, 130, 260][index];
+    }
+
+    return 150;
+}
+
+async function loadDevices(deviceIds) {
+    const whereClause = deviceIds.length
+        ? `WHERE d.id IN (${deviceIds.map(() => '?').join(', ')})`
+        : '';
+
+    const [rows] = await pool.execute(
+        `
+            SELECT
+                d.id,
+                d.device_name,
+                d.imei,
+                d.online,
+                d.last_seen,
+                COALESCE(g.name, 'No group') AS group_name
+            FROM devices d
+            LEFT JOIN groups g ON g.id = d.group_id
+            ${whereClause}
+            ORDER BY d.device_name ASC, d.id ASC
+        `,
+        deviceIds
+    );
+
+    return rows;
+}
+
+async function loadFrequencySegments(deviceIds) {
+    if (!deviceIds.length) {
+        return new Map();
+    }
+
+    const [rows] = await pool.query(
+        `
+            SELECT
+                device_id,
+                core_type,
+                segment_start,
+                segment_end,
+                duration_ms,
+                frequency_khz
+            FROM cpu_frequency_segments
+            WHERE device_id IN (${deviceIds.map(() => '?').join(', ')})
+            ORDER BY device_id ASC, segment_start DESC
+        `,
+        deviceIds
+    );
+
+    return groupRowsByDevice(rows);
+}
+
+async function loadCrashes(deviceIds) {
+    if (!deviceIds.length) {
+        return new Map();
+    }
+
+    const [rows] = await pool.query(
+        `
+            SELECT
+                ds.device_id,
+                dac.crash_time,
+                dac.reason,
+                a.package_name,
+                a.app_name
+            FROM device_app_crashes dac
+            INNER JOIN device_stats ds ON ds.id = dac.device_stat_id
+            INNER JOIN applications a ON a.id = dac.application_id
+            WHERE ds.device_id IN (${deviceIds.map(() => '?').join(', ')})
+            ORDER BY ds.device_id ASC, dac.crash_time DESC
+        `,
+        deviceIds
+    );
+
+    return groupRowsByDevice(rows);
+}
+
+function groupRowsByDevice(rows) {
+    const grouped = new Map();
+
+    rows.forEach((row) => {
+        if (!grouped.has(row.device_id)) {
+            grouped.set(row.device_id, []);
+        }
+
+        grouped.get(row.device_id).push(row);
+    });
+
+    return grouped;
+}
+
+function normalizeDeviceIds(deviceIds) {
+    if (!Array.isArray(deviceIds)) {
+        return [];
+    }
+
+    return [...new Set(
+        deviceIds
+            .map((value) => parseInt(value, 10))
+            .filter((value) => Number.isInteger(value) && value > 0)
+    )];
+}
+
+function formatDateTime(value) {
+    if (!value) {
+        return '-';
+    }
+
+    return new Date(value).toLocaleString();
+}
+
+function formatFrequency(value) {
+    if (!Number.isFinite(Number(value))) {
+        return '-';
+    }
+
+    return `${(Number(value) / 1000).toFixed(1)} MHz`;
+}
+
+function truncateText(value, maxLength) {
+    const stringValue = String(value || '');
+    if (stringValue.length <= maxLength) {
+        return stringValue;
+    }
+
+    return `${stringValue.slice(0, maxLength - 1)}...`;
+}
+
+module.exports = {
+    generateDeviceReport
+};

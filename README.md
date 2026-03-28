@@ -59,6 +59,24 @@ Protected routes:
 - Send `x-provision-secret: <PROVISION_SECRET>` for `/api/devices/provision`
 - Connect dashboard WebSocket clients to `/dashboard?token=<DASHBOARD_SECRET>`
 
+Dashboard login:
+- `POST /api/auth/login` with `{ "username": "admin", "password": "secret" }`
+- On success the API returns a JWT signed with `DASHBOARD_SECRET`
+- Use that token as `Authorization: Bearer <token>` for protected dashboard routes
+- `GET /api/auth/me` returns the current authenticated user info
+- `POST /api/auth/logout` confirms logout; since auth is JWT-based, the client should also delete the token locally
+- `AUTH_MODE=local` uses the `users` table today; the config already leaves room for a future LDAP/AD provider
+- Passwords should be stored as `scrypt$<salt>$<hash>` values for safer local auth
+- Generate a local password hash with `node scripts/hashPassword.js your-password`
+- Or create/update a dashboard user directly with `node scripts/createDashboardUser.js admin your-password admin System Administrator`
+- Plain text passwords are still accepted temporarily for migration, but new users should use hashes
+
+Example local user row:
+```sql
+INSERT INTO users (username, password, first_name, last_name)
+VALUES ('admin', 'PASTE_HASH_FROM_HASH_SCRIPT', 'admin', 'System', 'Administrator');
+```
+
 Developer helper endpoints:
 - When `DEV_TOOLS_ENABLED=true`, unguarded endpoints are under `/api/dev`
 - The companion unguarded dev page is available at `/dev/`

@@ -23,8 +23,17 @@ const config = {
     wssUrl: process.env.WSS_URL || 'wss://192.168.1.4:3000',
 
     auth: {
+        mode: process.env.AUTH_MODE || 'local',
         dashboardSecret: process.env.DASHBOARD_SECRET || '',
-        provisionSecret: process.env.PROVISION_SECRET || ''
+        provisionSecret: process.env.PROVISION_SECRET || '',
+        jwtExpiresIn: process.env.AUTH_JWT_EXPIRES_IN || '12h',
+        ldap: {
+            url: process.env.AUTH_LDAP_URL || '',
+            baseDn: process.env.AUTH_LDAP_BASE_DN || '',
+            domain: process.env.AUTH_LDAP_DOMAIN || '',
+            bindDn: process.env.AUTH_LDAP_BIND_DN || '',
+            bindPassword: process.env.AUTH_LDAP_BIND_PASSWORD || ''
+        }
     },
 
     devTools: {

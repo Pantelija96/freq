@@ -5,6 +5,7 @@ const config = require('../config');
 const pool = require('../config/db');
 const logger = require('../utils/logger');
 const { sendCommand } = require('../services/commandService');
+const { buildLicenceKey } = require('../services/licenceService');
 
 const logDir = path.resolve(process.cwd(), config.devTools.logDir);
 const DEFAULT_LOG_LINES = 200;
@@ -29,10 +30,53 @@ async function getDevOverview(req, res) {
             sendDeviceCommand: 'POST /api/dev/devices/:deviceId/commands',
             sendGroupCommand: 'POST /api/dev/groups/:groupId/commands',
             recentCommands: 'GET /api/dev/devices/:deviceId/commands?limit=20',
+            seedDemoData: 'GET /api/dev/seed/demo',
             logs: 'GET /api/dev/logs',
             tailLog: 'GET /api/dev/logs/:filename?lines=200'
         }
     });
+}
+
+async function seedDemoData(req, res) {
+    const connection = await pool.getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        const groupIds = await ensureGroups(connection, ['Alpha', 'Beta', 'Gamma']);
+        const appIds = await ensureApplications(connection, [
+            { packageName: 'com.spotify.music', appName: 'Spotify' },
+            { packageName: 'com.instagram.android', appName: 'Instagram' },
+            { packageName: 'com.whatsapp', appName: 'WhatsApp' },
+            { packageName: 'com.google.android.youtube', appName: 'YouTube' }
+        ]);
+
+        const now = new Date();
+        const devices = await upsertDemoDevices(connection, groupIds, now);
+        await seedLicences(connection, devices);
+
+        for (const device of devices) {
+            await seedCommands(connection, device.id, now);
+            await seedStats(connection, device.id, appIds, now);
+            await seedFrequencySegments(connection, device.id, now);
+        }
+
+        await connection.commit();
+
+        res.json({
+            status: 'ok',
+            message: 'Demo dashboard data inserted',
+            groups_created: Object.keys(groupIds).length,
+            devices_seeded: devices.length,
+            licences_seeded: devices.length
+        });
+    } catch (err) {
+        await connection.rollback();
+        logger.error('dev_seed_demo_failed', { error: err.message });
+        res.status(500).json({ error: 'Failed to seed demo data' });
+    } finally {
+        connection.release();
+    }
 }
 
 async function listDevices(req, res) {
@@ -279,6 +323,224 @@ function parseJsonSafe(value) {
     }
 }
 
+async function ensureGroups(connection, groupNames) {
+    const ids = {};
+
+    for (const groupName of groupNames) {
+        let [[row]] = await connection.execute(
+            `SELECT id FROM groups WHERE name = ? LIMIT 1`,
+            [groupName]
+        );
+
+        if (!row) {
+            const [insertResult] = await connection.execute(
+                `INSERT INTO groups (name) VALUES (?)`,
+                [groupName]
+            );
+            row = { id: insertResult.insertId };
+        }
+
+        ids[groupName] = row.id;
+    }
+
+    return ids;
+}
+
+async function ensureApplications(connection, apps) {
+    const ids = {};
+
+    for (const app of apps) {
+        await connection.execute(
+            `INSERT INTO applications (package_name, app_name)
+             VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE app_name = VALUES(app_name)`,
+            [app.packageName, app.appName]
+        );
+
+        const [[row]] = await connection.execute(
+            `SELECT id FROM applications WHERE package_name = ? LIMIT 1`,
+            [app.packageName]
+        );
+        ids[app.packageName] = row.id;
+    }
+
+    return ids;
+}
+
+async function upsertDemoDevices(connection, groupIds, now) {
+    const demoDevices = [
+        { imei: '860000000000101', deviceName: 'Alpha Node 01', groupName: 'Alpha', online: 1, fixerEnabled: 1, mac: 'AA:10:00:00:00:01', ip: '10.10.0.11' },
+        { imei: '860000000000102', deviceName: 'Alpha Node 02', groupName: 'Alpha', online: 0, fixerEnabled: 0, mac: 'AA:10:00:00:00:02', ip: '10.10.0.12' },
+        { imei: '860000000000201', deviceName: 'Beta Node 01', groupName: 'Beta', online: 1, fixerEnabled: 1, mac: 'BB:20:00:00:00:01', ip: '10.20.0.11' },
+        { imei: '860000000000202', deviceName: 'Beta Node 02', groupName: 'Beta', online: 1, fixerEnabled: 0, mac: 'BB:20:00:00:00:02', ip: '10.20.0.12' },
+        { imei: '860000000000301', deviceName: 'Gamma Node 01', groupName: 'Gamma', online: 0, fixerEnabled: 1, mac: 'CC:30:00:00:00:01', ip: '10.30.0.11' }
+    ];
+
+    for (const demo of demoDevices) {
+        await connection.execute(
+            `INSERT INTO devices (
+                imei, device_name, group_id, device_token, device_mac, device_ip, last_seen, online, fixer_enabled
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                device_name = VALUES(device_name),
+                group_id = VALUES(group_id),
+                device_mac = VALUES(device_mac),
+                device_ip = VALUES(device_ip),
+                last_seen = VALUES(last_seen),
+                online = VALUES(online),
+                fixer_enabled = VALUES(fixer_enabled)`,
+            [
+                demo.imei,
+                demo.deviceName,
+                groupIds[demo.groupName],
+                `demo-token-${demo.imei}`,
+                demo.mac,
+                demo.ip,
+                now,
+                demo.online,
+                demo.fixerEnabled
+            ]
+        );
+    }
+
+    const imeis = demoDevices.map((device) => device.imei);
+    const placeholders = imeis.map(() => '?').join(', ');
+    const [rows] = await connection.query(
+        `SELECT id, imei, device_name FROM devices WHERE imei IN (${placeholders}) ORDER BY id ASC`,
+        imeis
+    );
+
+    return rows;
+}
+
+async function seedLicences(connection, devices) {
+    for (const device of devices) {
+        const licenceKey = buildLicenceKey(device.id, device.imei);
+        await connection.execute(
+            `INSERT INTO licences (device_id, licence_key)
+             VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE licence_key = VALUES(licence_key)`,
+            [device.id, licenceKey]
+        );
+    }
+}
+
+async function seedCommands(connection, deviceId, now) {
+    await connection.execute(`DELETE FROM commands WHERE device_id = ? AND created_at >= CURRENT_DATE()`, [deviceId]);
+
+    const commandRows = [
+        ['fix', 'done', null, JSON.stringify({ ok: true, note: 'Fix applied' }), new Date(now.getTime() - 1000 * 60 * 45)],
+        ['stats', 'acknowledged', null, null, new Date(now.getTime() - 1000 * 60 * 20)],
+        ['reset_mac', 'failed', 'Adapter reset denied by policy', null, new Date(now.getTime() - 1000 * 60 * 5)]
+    ];
+
+    for (const [command, status, errorMessage, result, createdAt] of commandRows) {
+        await connection.execute(
+            `INSERT INTO commands (device_id, command, payload, status, result, error_message, created_at, updated_at, executed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                deviceId,
+                command,
+                JSON.stringify({ source: 'demo-seed' }),
+                status,
+                result,
+                errorMessage,
+                createdAt,
+                createdAt,
+                createdAt
+            ]
+        );
+    }
+}
+
+async function seedStats(connection, deviceId, appIds, now) {
+    await connection.execute(
+        `DELETE dac
+         FROM device_app_crashes dac
+         INNER JOIN device_stats ds ON ds.id = dac.device_stat_id
+         WHERE ds.device_id = ?`,
+        [deviceId]
+    );
+    await connection.execute(
+        `DELETE das
+         FROM device_app_stats das
+         INNER JOIN device_stats ds ON ds.id = das.device_stat_id
+         WHERE ds.device_id = ?`,
+        [deviceId]
+    );
+    await connection.execute(`DELETE FROM device_stats WHERE device_id = ?`, [deviceId]);
+
+    const bootTime = new Date(now.getTime() - 1000 * 60 * 60 * 5);
+
+    const [statInsert] = await connection.execute(
+        `INSERT INTO device_stats (device_id, boot_time, collected_at, fixed)
+         VALUES (?, ?, ?, ?)`,
+        [deviceId, bootTime, now, 1]
+    );
+
+    const statId = statInsert.insertId;
+
+    const appStats = [
+        [appIds['com.spotify.music'], 152.4, 8.7, 120.3, 14.8],
+        [appIds['com.instagram.android'], 98.2, 6.1, 210.4, 33.2],
+        [appIds['com.whatsapp'], 38.7, 2.4, 18.5, 9.1],
+        [appIds['com.google.android.youtube'], 122.1, 7.5, 480.2, 41.0]
+    ];
+
+    for (const [applicationId, cpuTime, batteryPct, receivedMb, transmittedMb] of appStats) {
+        await connection.execute(
+            `INSERT INTO device_app_stats (
+                device_stat_id, application_id, cpu_time_sec, battery_pct, received_mb, transmitted_mb
+             ) VALUES (?, ?, ?, ?, ?, ?)`,
+            [statId, applicationId, cpuTime, batteryPct, receivedMb, transmittedMb]
+        );
+    }
+
+    const crashes = [
+        [appIds['com.spotify.music'], new Date(now.getTime() - 1000 * 60 * 13), 'java.lang.IllegalStateException: Player init failed'],
+        [appIds['com.instagram.android'], new Date(now.getTime() - 1000 * 60 * 8), 'java.lang.NullPointerException']
+    ];
+
+    for (const [applicationId, crashTime, reason] of crashes) {
+        await connection.execute(
+            `INSERT INTO device_app_crashes (device_stat_id, application_id, crash_time, reason)
+             VALUES (?, ?, ?, ?)`,
+            [statId, applicationId, crashTime, reason]
+        );
+    }
+}
+
+async function seedFrequencySegments(connection, deviceId, now) {
+    const batchToken = `demo-${deviceId}-${now.getTime()}`;
+    const intervalMs = 250;
+    const smallValues = [576000, 576000, 691200, 998400, 1209600];
+    const bigValues = [710400, 844800, 960000, 1075200, 1248000];
+    const startBase = now.getTime() - 1000 * 60 * 30;
+
+    await connection.execute(
+        `DELETE FROM cpu_frequency_segments
+         WHERE device_id = ? AND batch_id LIKE 'demo-%'`,
+        [deviceId]
+    );
+
+    await insertFrequencySeries(connection, deviceId, batchToken, 'small', smallValues, startBase, intervalMs);
+    await insertFrequencySeries(connection, deviceId, batchToken, 'big', bigValues, startBase, intervalMs);
+}
+
+async function insertFrequencySeries(connection, deviceId, batchId, coreType, frequencies, startBase, intervalMs) {
+    for (let index = 0; index < frequencies.length; index += 1) {
+        const segmentStart = startBase + index * intervalMs;
+        const segmentEnd = segmentStart + intervalMs;
+
+        await connection.execute(
+            `INSERT IGNORE INTO cpu_frequency_segments (
+                device_id, core_type, segment_start, segment_end, frequency_khz, batch_id
+             ) VALUES (?, ?, ?, ?, ?, ?)`,
+            [deviceId, coreType, segmentStart, segmentEnd, frequencies[index], batchId]
+        );
+    }
+}
+
 module.exports = {
     getDevOverview,
     listDevices,
@@ -287,5 +549,6 @@ module.exports = {
     sendGroupCommand,
     listDeviceCommands,
     listLogs,
-    readLogFile
+    readLogFile,
+    seedDemoData
 };

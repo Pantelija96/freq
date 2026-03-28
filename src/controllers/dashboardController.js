@@ -1,6 +1,40 @@
 const pool = require('../config/db');
 const logger = require('../utils/logger');
+const { buildFrequencyAnalytics } = require('../services/frequencyAnalyticsService');
+const { listLicences } = require('../services/licenceService');
 const { generateDeviceReport } = require('../services/reportService');
+
+const getOverview = async (req, res) => {
+    try {
+        const [[deviceCounts]] = await pool.execute(`
+            SELECT
+                COUNT(*) AS total_devices,
+                SUM(CASE WHEN online = 1 THEN 1 ELSE 0 END) AS online_devices
+            FROM devices
+        `);
+
+        const [[groupsCount]] = await pool.execute(`
+            SELECT COUNT(*) AS total_groups
+            FROM groups
+        `);
+
+        const [[commandsToday]] = await pool.execute(`
+            SELECT COUNT(*) AS commands_today
+            FROM commands
+            WHERE created_at >= CURRENT_DATE()
+        `);
+
+        res.json({
+            total_devices: Number(deviceCounts.total_devices || 0),
+            online_devices: Number(deviceCounts.online_devices || 0),
+            total_groups: Number(groupsCount.total_groups || 0),
+            commands_today: Number(commandsToday.commands_today || 0)
+        });
+    } catch (err) {
+        logger.error('dashboard_overview_error', { error: err.message });
+        res.status(500).json({ error: 'Failed to load dashboard overview' });
+    }
+};
 
 const getAllDevices = async (req, res) => {
     const [rows] = await pool.execute(`
@@ -97,6 +131,26 @@ const getCpuFrequencies = async (req, res) => {
             series.push({ name: 'Big cores', type: 'line', step: 'middle', data: bigData });
         }
 
+        const [crashRows] = await pool.execute(`
+            SELECT dac.crash_time, dac.reason, a.package_name, a.app_name
+            FROM device_app_crashes dac
+            INNER JOIN device_stats ds ON ds.id = dac.device_stat_id
+            INNER JOIN applications a ON a.id = dac.application_id
+            WHERE ds.device_id = ?
+              AND dac.crash_time BETWEEN FROM_UNIXTIME(? / 1000) AND FROM_UNIXTIME(? / 1000)
+            ORDER BY dac.crash_time DESC
+        `, [deviceId, Number(startTs), Number(endTs)]);
+
+        const analytics = buildFrequencyAnalytics(
+            rows.map((row) => ({
+                core_type: row.core_type,
+                segment_start: row.ts_start,
+                segment_end: row.ts_end,
+                frequency_khz: row.frequency_khz
+            })),
+            crashRows
+        );
+
         res.json({
             status: 'ok',
             deviceId,
@@ -104,7 +158,9 @@ const getCpuFrequencies = async (req, res) => {
             to: Number(endTs),
             series,
             segmentsCount: rows.length,
-            uniqueFrequencies: [...new Set(rows.map(r => Number(r.frequency_khz)))].sort((a,b)=>a-b)
+            uniqueFrequencies: [...new Set(rows.map(r => Number(r.frequency_khz)))].sort((a,b)=>a-b),
+            summary: analytics.summary,
+            fixed_sessions: analytics.fixedSessions
         });
     } catch (err) {
         logger.error('api_cpu_frequencies_error', { deviceId, error: err.message });
@@ -137,13 +193,26 @@ const getDeviceStats = async (req, res) => {
             WHERE dac.device_stat_id = ? ORDER BY dac.crash_time DESC
         `, [statId]);
 
+        const [frequencyRows] = await pool.execute(`
+            SELECT core_type, segment_start, segment_end, frequency_khz
+            FROM cpu_frequency_segments
+            WHERE device_id = ?
+            ORDER BY segment_start ASC
+        `, [deviceId]);
+
+        const analytics = buildFrequencyAnalytics(frequencyRows, crashes);
+
         res.json({
             status: 'ok',
             deviceId,
             boot_time: stats[0].boot_time,
             collected_at: stats[0].collected_at,
             apps: appStats,
-            crashes
+            crashes,
+            crash_summary: {
+                during_fixed: analytics.summary.crashes_during_fixed,
+                outside_fixed: analytics.summary.crashes_outside_fixed
+            }
         });
     } catch (err) {
         logger.error('get_device_stats_error', { deviceId, error: err.message });
@@ -152,17 +221,31 @@ const getDeviceStats = async (req, res) => {
 };
 
 const getLicences = async (req, res) => {
-    const [rows] = await pool.query(`
-        SELECT id, device_token, imei, device_name, device_mac FROM devices ORDER BY device_name ASC
-    `);
-    res.json(rows);
+    try {
+        const rows = await listLicences();
+        res.json(rows);
+    } catch (err) {
+        logger.error('get_licences_error', { error: err.message });
+        res.status(500).json({ error: 'Failed to load licences' });
+    }
 };
 
 const generateReport = async (req, res) => {
-    await generateDeviceReport(res);
+    try {
+        const deviceIds = Array.isArray(req.body?.deviceIds)
+            ? req.body.deviceIds
+            : req.query.deviceIds;
+        await generateDeviceReport(res, { deviceIds });
+    } catch (err) {
+        logger.error('generate_report_error', { error: err.message });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to generate report' });
+        }
+    }
 };
 
 module.exports = {
+    getOverview,
     getAllDevices,
     getDeviceById,
     getDeviceCommands,

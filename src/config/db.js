@@ -10,7 +10,6 @@ const pool = mysql.createPool({
   waitForConnections: config.db.waitForConnections,
   connectionLimit: config.db.connectionLimit,
   queueLimit: config.db.queueLimit,
-  // Optional: better for large frequency data
   enableKeepAlive: true,
   timezone: '+00:00'
 });

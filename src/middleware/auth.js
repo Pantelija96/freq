@@ -65,24 +65,77 @@ function isAuthorized(token, secret) {
     }
 }
 
-function respondMissingSecret(res, eventName) {
-    logger.error(eventName, { configured: false });
-    return res.status(503).json({ error: 'Authentication is not configured' });
-}
-
-function requireDashboardAuth(req, res, next) {
+function getDashboardAuthContext(req) {
     const secret = config.auth.dashboardSecret;
     if (!secret) {
-        return respondMissingSecret(res, 'dashboard_auth_secret_missing');
+        return { ok: false, reason: 'secret_missing' };
     }
 
     const token = extractToken(req, {
         headerNames: ['x-dashboard-secret', 'x-dashboard-token']
     });
 
-    if (!isAuthorized(token, secret)) {
+    if (!token) {
+        return { ok: false, reason: 'missing_token' };
+    }
+
+    if (token === secret) {
+        return {
+            ok: true,
+            authType: 'shared_secret',
+            token,
+            user: null
+        };
+    }
+
+    try {
+        const payload = jwt.verify(token, secret);
+        return {
+            ok: true,
+            authType: 'jwt',
+            token,
+            user: payload
+        };
+    } catch {
+        return { ok: false, reason: 'invalid_token' };
+    }
+}
+
+function respondMissingSecret(res, eventName) {
+    logger.error(eventName, { configured: false });
+    return res.status(503).json({ error: 'Authentication is not configured' });
+}
+
+function requireDashboardAuth(req, res, next) {
+    if (!config.auth.dashboardSecret) {
+        return respondMissingSecret(res, 'dashboard_auth_secret_missing');
+    }
+
+    const authContext = getDashboardAuthContext(req);
+    if (!authContext.ok) {
         logger.warn('dashboard_auth_failed', { ip: req.ip, path: req.originalUrl });
         return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    req.auth = authContext;
+    return next();
+}
+
+function requireAdminRole(req, res, next) {
+    const role = req.auth?.user?.role;
+
+    // Keep shared-secret access working for operational/admin tooling.
+    if (req.auth?.authType === 'shared_secret') {
+        return next();
+    }
+
+    if (role !== 'admin') {
+        logger.warn('dashboard_admin_required', {
+            username: req.auth?.user?.username || null,
+            path: req.originalUrl,
+            ip: req.ip
+        });
+        return res.status(403).json({ error: 'Admin role required' });
     }
 
     return next();
@@ -107,28 +160,25 @@ function requireProvisionAuth(req, res, next) {
 }
 
 function authorizeDashboardRequest(req) {
-    const secret = config.auth.dashboardSecret;
-    if (!secret) {
+    if (!config.auth.dashboardSecret) {
         logger.error('dashboard_ws_auth_secret_missing', { configured: false });
         return false;
     }
 
-    const token = extractToken(req, {
-        headerNames: ['x-dashboard-secret', 'x-dashboard-token']
-    });
-
-    const authorized = isAuthorized(token, secret);
-    if (!authorized) {
+    const authContext = getDashboardAuthContext(req);
+    if (!authContext.ok) {
         logger.warn('dashboard_ws_auth_failed', {
             ip: req.socket?.remoteAddress
         });
     }
 
-    return authorized;
+    return authContext.ok;
 }
 
 module.exports = {
     requireDashboardAuth,
+    requireAdminRole,
     requireProvisionAuth,
-    authorizeDashboardRequest
+    authorizeDashboardRequest,
+    getDashboardAuthContext
 };
