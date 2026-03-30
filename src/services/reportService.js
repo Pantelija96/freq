@@ -6,18 +6,20 @@ const pool = require('../config/db');
 const { buildFrequencyAnalytics, formatDuration } = require('./frequencyAnalyticsService');
 
 const REPORT_COLORS = {
-    background: '#0b1731',
-    surface: '#12284f',
-    surfaceAlt: '#1b335f',
+    background: '#ffffff',
+    surface: '#eef3fb',
+    surfaceAlt: '#dbe5f6',
     accent: '#3e5ea7',
-    text: '#eef4ff',
-    muted: '#b9c9ef'
+    text: '#1d2b45',
+    muted: '#5f6f8e'
 };
 const LOGO_PATH = path.resolve(__dirname, '../../docs/assets/freq-logo.jfif');
 
 async function generateDeviceReport(res, options = {}) {
     const selectedDeviceIds = normalizeDeviceIds(options.deviceIds);
     const devices = await loadDevices(selectedDeviceIds);
+    const requestedBy = formatRequestedBy(options.requestedBy);
+    const singleDeviceReport = devices.length === 1;
 
     if (!devices.length) {
         res.status(404).json({ error: 'No devices found for the requested report' });
@@ -27,6 +29,7 @@ async function generateDeviceReport(res, options = {}) {
     const deviceIds = devices.map((device) => device.id);
     const frequencySegmentsByDevice = await loadFrequencySegments(deviceIds);
     const crashesByDevice = await loadCrashes(deviceIds);
+    const commandsByDevice = await loadCommands(deviceIds);
 
     const doc = new PDFDocument({
         margin: 42,
@@ -47,19 +50,24 @@ async function generateDeviceReport(res, options = {}) {
 
         renderDevicePage(doc, device, {
             frequencySegments: frequencySegmentsByDevice.get(device.id) || [],
-            crashes: crashesByDevice.get(device.id) || []
+            crashes: crashesByDevice.get(device.id) || [],
+            commands: commandsByDevice.get(device.id) || []
+        }, {
+            requestedBy,
+            createdAt: new Date(),
+            singleDeviceReport
         });
     });
 
     doc.end();
 }
 
-function renderDevicePage(doc, device, details) {
+function renderDevicePage(doc, device, details, reportMeta) {
     const analytics = buildFrequencyAnalytics(details.frequencySegments, details.crashes);
 
     renderPageBackground(doc);
     renderLogo(doc);
-    doc.fontSize(20).text(device.device_name || `Device ${device.id}`, { align: 'left' });
+    doc.fontSize(20).fillColor(REPORT_COLORS.accent).text(device.device_name || `Device ${device.id}`, { align: 'left' });
     doc.moveDown(0.35);
     doc.fillColor(REPORT_COLORS.text);
     doc.fontSize(10);
@@ -68,6 +76,8 @@ function renderDevicePage(doc, device, details) {
     doc.text(`Group: ${device.group_name || 'No group'}`);
     doc.text(`Status: ${device.online ? 'ONLINE' : 'OFFLINE'}`);
     doc.text(`Last Seen: ${formatDateTime(device.last_seen)}`);
+    doc.text(`Report Created: ${formatDateTime(reportMeta.createdAt)}`);
+    doc.text(`Created By: ${reportMeta.requestedBy}`);
     doc.moveDown(1);
 
     renderSectionTitle(doc, 'Frequency Summary');
@@ -82,7 +92,7 @@ function renderDevicePage(doc, device, details) {
         doc.fontSize(10).fillColor(REPORT_COLORS.muted).text('No fixed frequency sessions detected.');
         doc.fillColor(REPORT_COLORS.text);
     } else {
-        renderFrequencyTable(doc, analytics.fixedSessions);
+        renderFrequencyTable(doc, analytics.fixedSessions, reportMeta);
     }
 
     doc.moveDown(1.1);
@@ -93,12 +103,24 @@ function renderDevicePage(doc, device, details) {
         doc.fontSize(10).fillColor(REPORT_COLORS.muted).text('No crashes recorded.');
         doc.fillColor(REPORT_COLORS.text);
     } else {
-        renderCrashesTable(doc, details.crashes);
+        renderCrashesTable(doc, details.crashes, reportMeta);
+    }
+
+    doc.moveDown(1.1);
+    renderSectionTitle(doc, 'Command History');
+    doc.moveDown(0.35);
+
+    if (!details.commands.length) {
+        doc.fontSize(10).fillColor(REPORT_COLORS.muted).text('No commands recorded.');
+        doc.fillColor(REPORT_COLORS.text);
+    } else {
+        renderCommandsTable(doc, details.commands, reportMeta);
     }
 }
 
-function renderFrequencyTable(doc, segments) {
-    const visibleSegments = segments.slice(0, 20);
+function renderFrequencyTable(doc, segments, reportMeta = {}) {
+    const limit = reportMeta.singleDeviceReport ? 40 : 10;
+    const visibleSegments = segments.slice(0, limit);
     renderTableHeader(doc, ['Start', 'End', 'Duration', 'Small', 'Big']);
 
     visibleSegments.forEach((segment) => {
@@ -133,15 +155,16 @@ function renderSummaryGrid(doc, summary) {
     });
 }
 
-function renderCrashesTable(doc, crashes) {
-    const visibleCrashes = crashes.slice(0, 20);
+function renderCrashesTable(doc, crashes, reportMeta = {}) {
+    const limit = reportMeta.singleDeviceReport ? 40 : 10;
+    const visibleCrashes = crashes.slice(0, limit);
     renderTableHeader(doc, ['Timestamp', 'App', 'Reason']);
 
     visibleCrashes.forEach((crash) => {
         renderTableRow(doc, [
             formatDateTime(crash.crash_time),
             crash.app_name || crash.package_name || 'Unknown',
-            truncateText(crash.reason || 'Unknown', 72)
+            truncateText(crash.reason || 'Unknown', reportMeta.singleDeviceReport ? 90 : 56)
         ]);
     });
 
@@ -149,6 +172,29 @@ function renderCrashesTable(doc, crashes) {
         doc.moveDown(0.25);
         doc.fontSize(9).fillColor(REPORT_COLORS.muted).text(
             `Showing ${visibleCrashes.length} of ${crashes.length} total crash events.`
+        );
+        doc.fillColor(REPORT_COLORS.text);
+    }
+}
+
+function renderCommandsTable(doc, commands, reportMeta = {}) {
+    const limit = reportMeta.singleDeviceReport ? 40 : 12;
+    const visibleCommands = commands.slice(0, limit);
+    renderTableHeader(doc, ['Date', 'Command', 'Status', 'Error']);
+
+    visibleCommands.forEach((command) => {
+        renderTableRow(doc, [
+            formatDateTime(command.created_at),
+            command.command || '-',
+            command.status || '-',
+            truncateText(command.error_message || '-', reportMeta.singleDeviceReport ? 80 : 36)
+        ]);
+    });
+
+    if (commands.length > visibleCommands.length) {
+        doc.moveDown(0.25);
+        doc.fontSize(9).fillColor(REPORT_COLORS.muted).text(
+            `Showing ${visibleCommands.length} of ${commands.length} total commands.`
         );
         doc.fillColor(REPORT_COLORS.text);
     }
@@ -174,6 +220,7 @@ function renderTableHeader(doc, columns) {
 }
 
 function renderTableRow(doc, columns) {
+    ensurePageSpace(doc, 18);
     const rowTop = doc.y;
     let x = 48;
 
@@ -278,6 +325,29 @@ async function loadCrashes(deviceIds) {
     return groupRowsByDevice(rows);
 }
 
+async function loadCommands(deviceIds) {
+    if (!deviceIds.length) {
+        return new Map();
+    }
+
+    const [rows] = await pool.query(
+        `
+            SELECT
+                device_id,
+                created_at,
+                command,
+                status,
+                error_message
+            FROM commands
+            WHERE device_id IN (${deviceIds.map(() => '?').join(', ')})
+            ORDER BY device_id ASC, created_at DESC
+        `,
+        deviceIds
+    );
+
+    return groupRowsByDevice(rows);
+}
+
 function groupRowsByDevice(rows) {
     const grouped = new Map();
 
@@ -339,12 +409,41 @@ function renderLogo(doc) {
     doc.y = Math.max(doc.y, 84);
 }
 
+function formatRequestedBy(user) {
+    if (!user) {
+        return 'System';
+    }
+
+    const fullName = [user.first_name, user.last_name]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+    if (fullName && user.username) {
+        return `${fullName} (${user.username})`;
+    }
+
+    return fullName || user.username || 'System';
+}
+
 function renderSectionTitle(doc, title) {
+    ensurePageSpace(doc, 28);
     const y = doc.y;
     doc.roundedRect(42, y - 2, 510, 22, 6).fill(REPORT_COLORS.surface);
     doc.fillColor(REPORT_COLORS.text);
     doc.fontSize(14).text(title, 54, y + 3);
     doc.moveDown(1.2);
+}
+
+function ensurePageSpace(doc, heightNeeded) {
+    const bottomLimit = doc.page.height - doc.page.margins.bottom - 20;
+    if (doc.y + heightNeeded <= bottomLimit) {
+        return;
+    }
+
+    doc.addPage();
+    renderPageBackground(doc);
+    renderLogo(doc);
 }
 
 function truncateText(value, maxLength) {

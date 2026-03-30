@@ -94,6 +94,17 @@ const sendDashboardCommand = async (req, res) => {
     }
 };
 
+async function loadFrequencyRows(deviceId, endTs, startTs) {
+    const [rows] = await pool.execute(`
+        SELECT core_type, segment_start AS ts_start, segment_end AS ts_end, frequency_khz
+        FROM cpu_frequency_segments
+        WHERE device_id = ? AND segment_start < ? AND segment_end > ?
+        ORDER BY core_type, segment_start
+    `, [deviceId, endTs, startTs]);
+
+    return rows;
+}
+
 const getCpuFrequencies = async (req, res) => {
     const deviceId = parseInt(req.params.deviceId);
     if (!deviceId || isNaN(deviceId)) return res.status(400).json({ status: 'error', message: 'Invalid deviceId' });
@@ -103,12 +114,21 @@ const getCpuFrequencies = async (req, res) => {
     let endTs   = end   ? BigInt(end)   : BigInt(Date.now());
 
     try {
-        const [rows] = await pool.execute(`
-            SELECT core_type, segment_start AS ts_start, segment_end AS ts_end, frequency_khz
-            FROM cpu_frequency_segments
-            WHERE device_id = ? AND segment_start < ? AND segment_end > ?
-            ORDER BY core_type, segment_start
-        `, [deviceId, endTs, startTs]);
+        let rows = await loadFrequencyRows(deviceId, endTs, startTs);
+
+        if (!start && !end && rows.length === 0) {
+            const [[latestSegment]] = await pool.execute(`
+                SELECT MAX(segment_end) AS latest_segment_end
+                FROM cpu_frequency_segments
+                WHERE device_id = ?
+            `, [deviceId]);
+
+            if (latestSegment?.latest_segment_end) {
+                endTs = BigInt(latestSegment.latest_segment_end);
+                startTs = endTs - BigInt(24 * 60 * 60 * 1000);
+                rows = await loadFrequencyRows(deviceId, endTs, startTs);
+            }
+        }
 
         const smallData = [];
         const bigData = [];
@@ -171,10 +191,24 @@ const getCpuFrequencies = async (req, res) => {
 const getDeviceStats = async (req, res) => {
     const deviceId = parseInt(req.params.deviceId);
     try {
-        const [stats] = await pool.execute(`
-            SELECT id, boot_time, collected_at FROM device_stats 
-            WHERE device_id = ? ORDER BY collected_at DESC LIMIT 1
+        let [stats] = await pool.execute(`
+            SELECT ds.id, ds.boot_time, ds.collected_at
+            FROM device_stats ds
+            WHERE ds.device_id = ?
+              AND (
+                EXISTS (SELECT 1 FROM device_app_stats das WHERE das.device_stat_id = ds.id)
+                OR EXISTS (SELECT 1 FROM device_app_crashes dac WHERE dac.device_stat_id = ds.id)
+              )
+            ORDER BY ds.collected_at DESC
+            LIMIT 1
         `, [deviceId]);
+
+        if (!stats.length) {
+            [stats] = await pool.execute(`
+                SELECT id, boot_time, collected_at FROM device_stats 
+                WHERE device_id = ? ORDER BY collected_at DESC LIMIT 1
+            `, [deviceId]);
+        }
 
         if (!stats.length) return res.json({ status: 'ok', data: null });
 
@@ -235,7 +269,10 @@ const generateReport = async (req, res) => {
         const deviceIds = Array.isArray(req.body?.deviceIds)
             ? req.body.deviceIds
             : req.query.deviceIds;
-        await generateDeviceReport(res, { deviceIds });
+        await generateDeviceReport(res, {
+            deviceIds,
+            requestedBy: req.auth?.user || null
+        });
     } catch (err) {
         logger.error('generate_report_error', { error: err.message });
         if (!res.headersSent) {
