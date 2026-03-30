@@ -71,10 +71,9 @@ Dashboard login:
 - Or create/update a dashboard user directly with `node scripts/createDashboardUser.js admin your-password admin System Administrator`
 - Plain text passwords are still accepted temporarily for migration, but new users should use hashes
 
-Example local user row:
-```sql
-INSERT INTO users (username, password, first_name, last_name)
-VALUES ('admin', 'PASTE_HASH_FROM_HASH_SCRIPT', 'admin', 'System', 'Administrator');
+Script to insert new user (testing)
+```bash
+node scripts/createDashboardUser.js user user user Regular UserB
 ```
 
 Developer helper endpoints:
@@ -85,4 +84,4 @@ Developer helper endpoints:
 - `GET /api/dev/devices/:deviceId/commands?limit=20` shows recent command history
 - `GET /api/dev/logs` lists log files
 - `GET /api/dev/logs/<filename>?lines=200` tails a readable log file
-- Dev page accessible on: https://127.0.0.1:3000/dev/
+- Dev page accessible on: https://127.0.0.1:3000/dev/ 
