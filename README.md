@@ -11,6 +11,19 @@ CREATE DATABASE freq CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 ```
 Import the tables using the file `frequencies.sql` (in the project root).
 
+To fully rebuild the database from `.env` and recreate the default dashboard users, run:
+```bash
+npm run db:reset
+```
+
+This will:
+- drop the database from `DB_NAME` if it exists
+- recreate it
+- apply `frequencies.sql`
+- insert two dashboard users:
+  - `admin / admin`
+  - `user / user`
+
 
 ###2. Project Setup
 
