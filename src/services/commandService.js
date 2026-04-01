@@ -3,12 +3,20 @@ const logger = require('../utils/logger');
 
 const sendCommand = async (deviceId, command, payload = null, activeDevices, options = {}) => {
     const active = activeDevices.get(deviceId);
-    const requestedBy = options.requestedBy || null;
+    const requestedByUserId = options.requestedByUserId || null;
+    const requestedByLabel = options.requestedByLabel || null;
 
     const [result] = await pool.execute(
-        `INSERT INTO commands (device_id, session_id, requested_by, command, payload, status)
-         VALUES (?, ?, ?, ?, ?, 'pending')`,
-        [deviceId, active?.sessionId ?? null, requestedBy, command, JSON.stringify(payload || null)]
+        `INSERT INTO commands (device_id, session_id, requested_by_user_id, requested_by_label, command, payload, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+        [
+            deviceId,
+            active?.sessionId ?? null,
+            requestedByUserId,
+            requestedByLabel,
+            command,
+            JSON.stringify(payload || null)
+        ]
     );
 
     const commandId = result.insertId;
@@ -24,9 +32,9 @@ const sendCommand = async (deviceId, command, payload = null, activeDevices, opt
 
         await pool.execute(`UPDATE commands SET status='sent' WHERE id=?`, [commandId]);
 
-        logger.info('command_sent', { deviceId, commandId, command, requestedBy });
+        logger.info('command_sent', { deviceId, commandId, command, requestedByUserId, requestedByLabel });
     } else {
-        logger.info('command_queued_offline', { deviceId, commandId, command, requestedBy });
+        logger.info('command_queued_offline', { deviceId, commandId, command, requestedByUserId, requestedByLabel });
     }
 
     return commandId;

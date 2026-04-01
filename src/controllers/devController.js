@@ -147,7 +147,7 @@ async function sendDeviceCommand(req, res) {
         }
 
         const commandId = await sendCommand(deviceId, type, payload, req.app.locals.activeDevices, {
-            requestedBy: 'dev-tools'
+            requestedByLabel: 'dev-tools'
         });
         const active = req.app.locals.activeDevices.get(deviceId);
 
@@ -188,7 +188,7 @@ async function sendGroupCommand(req, res) {
         const commands = [];
         for (const device of devices) {
             const commandId = await sendCommand(device.id, type, payload, req.app.locals.activeDevices, {
-                requestedBy: 'dev-tools'
+                requestedByLabel: 'dev-tools'
             });
             commands.push({
                 device_id: device.id,
@@ -221,10 +221,28 @@ async function listDeviceCommands(req, res) {
 
     try {
         const [rows] = await pool.execute(
-            `SELECT id, session_id, requested_by, command, payload, status, result, error_message, created_at, updated_at, executed_at
-             FROM commands
-             WHERE device_id = ?
-             ORDER BY id DESC
+            `SELECT
+                c.id,
+                c.session_id,
+                c.requested_by_user_id,
+                c.requested_by_label,
+                COALESCE(
+                    NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                    u.username,
+                    c.requested_by_label
+                ) AS requested_by,
+                c.command,
+                c.payload,
+                c.status,
+                c.result,
+                c.error_message,
+                c.created_at,
+                c.updated_at,
+                c.executed_at
+             FROM commands c
+             LEFT JOIN users u ON u.id = c.requested_by_user_id
+             WHERE c.device_id = ?
+             ORDER BY c.id DESC
              LIMIT ?`,
             [deviceId, limit]
         );
@@ -440,7 +458,7 @@ async function seedCommands(connection, deviceId, now) {
 
     for (const [command, status, errorMessage, result, createdAt] of commandRows) {
         await connection.execute(
-            `INSERT INTO commands (device_id, requested_by, command, payload, status, result, error_message, created_at, updated_at, executed_at)
+            `INSERT INTO commands (device_id, requested_by_label, command, payload, status, result, error_message, created_at, updated_at, executed_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 deviceId,

@@ -339,15 +339,20 @@ async function loadCommands(deviceIds) {
     const [rows] = await pool.query(
         `
             SELECT
-                device_id,
-                created_at,
-                requested_by,
-                command,
-                status,
-                error_message
-            FROM commands
-            WHERE device_id IN (${deviceIds.map(() => '?').join(', ')})
-            ORDER BY device_id ASC, created_at DESC
+                c.device_id,
+                c.created_at,
+                COALESCE(
+                    NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                    u.username,
+                    c.requested_by_label
+                ) AS requested_by,
+                c.command,
+                c.status,
+                c.error_message
+            FROM commands c
+            LEFT JOIN users u ON u.id = c.requested_by_user_id
+            WHERE c.device_id IN (${deviceIds.map(() => '?').join(', ')})
+            ORDER BY c.device_id ASC, c.created_at DESC
         `,
         deviceIds
     );

@@ -3,6 +3,7 @@ const logger = require('../utils/logger');
 const { buildFrequencyAnalytics } = require('../services/frequencyAnalyticsService');
 const { listLicences } = require('../services/licenceService');
 const { generateDeviceReport } = require('../services/reportService');
+const { sendCommand } = require('../services/commandService');
 
 const getOverview = async (req, res) => {
     try {
@@ -70,23 +71,10 @@ const sendDashboardCommand = async (req, res) => {
 
     try {
         const activeDevices = req.app.locals.activeDevices;
-        const requestedBy = req.auth?.user?.username || null;
-        const [result] = await pool.execute(`
-            INSERT INTO commands (device_id, requested_by, command, payload, status) VALUES (?, ?, ?, ?, 'pending')
-        `, [deviceId, requestedBy, command, JSON.stringify(payload || null)]);
-
-        const commandId = result.insertId;
-
-        const active = activeDevices.get(Number(deviceId));
-        if (active) {
-            active.ws.send(JSON.stringify({
-                type: 'command',
-                command_id: commandId,
-                command,
-                payload: payload || null
-            }));
-            await pool.execute(`UPDATE commands SET status='sent' WHERE id=?`, [commandId]);
-        }
+        const requestedByUserId = Number(req.auth?.user?.id || req.auth?.user?.sub) || null;
+        const commandId = await sendCommand(deviceId, command, payload, activeDevices, {
+            requestedByUserId
+        });
 
         res.json({ status: 'ok', commandId });
     } catch (err) {

@@ -51,6 +51,7 @@ function issueAuthToken(user) {
 
     return jwt.sign(
         {
+            id: user.id,
             sub: user.id,
             username: user.username,
             role: user.role,
