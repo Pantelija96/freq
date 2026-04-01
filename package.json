@@ -7,6 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "db:reset": "node scripts/resetDatabase.js",
+    "db:users": "node scripts/createDbUsers.js",
     "lint": "eslint . --ext .js",
     "lint:fix": "eslint . --ext .js --fix"
   },

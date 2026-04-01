@@ -1,8 +1,10 @@
 require('dotenv').config();
+const path = require('path');
 
 const config = {
     env: process.env.NODE_ENV || 'development',
     port: parseInt(process.env.PORT) || 3000,
+    publicUrl: process.env.PUBLIC_URL || '',
 
     db: {
         host: process.env.DB_HOST || '127.0.0.1',
@@ -10,17 +12,21 @@ const config = {
         user: process.env.DB_USER || 'root',
         password: process.env.DB_PASSWORD || '',
         database: process.env.DB_NAME || 'freq',
+        adminHost: process.env.DB_ADMIN_HOST || process.env.DB_HOST || '127.0.0.1',
+        adminPort: parseInt(process.env.DB_ADMIN_PORT || process.env.DB_PORT) || 3306,
+        adminUser: process.env.DB_ADMIN_USER || process.env.DB_USER || 'root',
+        adminPassword: process.env.DB_ADMIN_PASSWORD || process.env.DB_PASSWORD || '',
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0
     },
 
     https: {
-        key: process.env.CERT_KEY || './cert/server.key',
-        cert: process.env.CERT_CERT || './cert/server.cert'
+        key: process.env.CERT_KEY || path.join('.', 'cert', 'server.key'),
+        cert: process.env.CERT_CERT || path.join('.', 'cert', 'server.cert')
     },
 
-    wssUrl: process.env.WSS_URL || 'wss://192.168.1.4:3000',
+    wssUrl: process.env.WSS_URL || 'wss://127.0.0.1:3000',
 
     auth: {
         mode: process.env.AUTH_MODE || 'local',

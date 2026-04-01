@@ -43,6 +43,7 @@ CREATE TABLE `commands` (
   `id` int(11) NOT NULL,
   `device_id` int(11) NOT NULL,
   `session_id` varchar(100) DEFAULT NULL,
+  `requested_by` varchar(120) DEFAULT NULL,
   `command` varchar(50) NOT NULL,
   `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`payload`)),
   `status` enum('pending','sent','acknowledged','done','failed','cancelled') DEFAULT 'pending',

@@ -16,10 +16,10 @@ async function main() {
     const schemaSql = fs.readFileSync(schemaPath, 'utf8');
 
     const adminConnection = await mysql.createConnection({
-        host: config.host,
-        port: config.port,
-        user: config.user,
-        password: config.password,
+        host: config.adminHost,
+        port: config.adminPort,
+        user: config.adminUser,
+        password: config.adminPassword,
         multipleStatements: true
     });
 
@@ -64,9 +64,11 @@ function getDatabaseConfig() {
     const host = process.env.DB_HOST;
     const user = process.env.DB_USER;
     const database = process.env.DB_NAME;
+    const adminHost = process.env.DB_ADMIN_HOST || process.env.DB_HOST;
+    const adminUser = process.env.DB_ADMIN_USER || process.env.DB_USER;
 
-    if (!host || !user || !database) {
-        throw new Error('DB_HOST, DB_USER, and DB_NAME must be configured in the environment.');
+    if (!host || !user || !database || !adminHost || !adminUser) {
+        throw new Error('DB_HOST, DB_USER, DB_NAME, DB_ADMIN_HOST, and DB_ADMIN_USER must be configured in the environment.');
     }
 
     return {
@@ -74,7 +76,11 @@ function getDatabaseConfig() {
         port: Number(process.env.DB_PORT || 3306),
         user,
         password: process.env.DB_PASSWORD || '',
-        database
+        database,
+        adminHost,
+        adminPort: Number(process.env.DB_ADMIN_PORT || process.env.DB_PORT || 3306),
+        adminUser,
+        adminPassword: process.env.DB_ADMIN_PASSWORD || process.env.DB_PASSWORD || ''
     };
 }
 

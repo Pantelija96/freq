@@ -146,7 +146,9 @@ async function sendDeviceCommand(req, res) {
             return res.status(404).json({ error: 'Device not found' });
         }
 
-        const commandId = await sendCommand(deviceId, type, payload, req.app.locals.activeDevices);
+        const commandId = await sendCommand(deviceId, type, payload, req.app.locals.activeDevices, {
+            requestedBy: 'dev-tools'
+        });
         const active = req.app.locals.activeDevices.get(deviceId);
 
         res.json({
@@ -185,7 +187,9 @@ async function sendGroupCommand(req, res) {
 
         const commands = [];
         for (const device of devices) {
-            const commandId = await sendCommand(device.id, type, payload, req.app.locals.activeDevices);
+            const commandId = await sendCommand(device.id, type, payload, req.app.locals.activeDevices, {
+                requestedBy: 'dev-tools'
+            });
             commands.push({
                 device_id: device.id,
                 device_name: device.device_name,
@@ -217,7 +221,7 @@ async function listDeviceCommands(req, res) {
 
     try {
         const [rows] = await pool.execute(
-            `SELECT id, session_id, command, payload, status, result, error_message, created_at, updated_at, executed_at
+            `SELECT id, session_id, requested_by, command, payload, status, result, error_message, created_at, updated_at, executed_at
              FROM commands
              WHERE device_id = ?
              ORDER BY id DESC
@@ -436,10 +440,11 @@ async function seedCommands(connection, deviceId, now) {
 
     for (const [command, status, errorMessage, result, createdAt] of commandRows) {
         await connection.execute(
-            `INSERT INTO commands (device_id, command, payload, status, result, error_message, created_at, updated_at, executed_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO commands (device_id, requested_by, command, payload, status, result, error_message, created_at, updated_at, executed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 deviceId,
+                'demo-seed',
                 command,
                 JSON.stringify({ source: 'demo-seed' }),
                 status,

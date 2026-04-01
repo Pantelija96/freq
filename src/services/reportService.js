@@ -180,15 +180,17 @@ function renderCrashesTable(doc, crashes, reportMeta = {}) {
 function renderCommandsTable(doc, commands, reportMeta = {}) {
     const limit = reportMeta.singleDeviceReport ? 40 : 12;
     const visibleCommands = commands.slice(0, limit);
-    renderTableHeader(doc, ['Date', 'Command', 'Status', 'Error']);
+    const widths = [80, 95, 85, 80, 170];
+    renderTableHeader(doc, ['Date', 'Command', 'By', 'Status', 'Error'], widths);
 
     visibleCommands.forEach((command) => {
         renderTableRow(doc, [
             formatDateTime(command.created_at),
             command.command || '-',
+            command.requested_by || '-',
             command.status || '-',
             truncateText(command.error_message || '-', reportMeta.singleDeviceReport ? 80 : 36)
-        ]);
+        ], widths);
     });
 
     if (commands.length > visibleCommands.length) {
@@ -200,7 +202,7 @@ function renderCommandsTable(doc, commands, reportMeta = {}) {
     }
 }
 
-function renderTableHeader(doc, columns) {
+function renderTableHeader(doc, columns, widths = null) {
     doc.fontSize(10).fillColor(REPORT_COLORS.text);
     const top = doc.y;
     doc.roundedRect(42, top - 2, 510, 20, 6).fill(REPORT_COLORS.surfaceAlt);
@@ -209,33 +211,37 @@ function renderTableHeader(doc, columns) {
     let x = 48;
     columns.forEach((column, index) => {
         doc.text(column, x, top + 3, {
-            width: getColumnWidth(columns.length, index),
+            width: getColumnWidth(columns.length, index, widths),
             ellipsis: true
         });
-        x += getColumnWidth(columns.length, index);
+        x += getColumnWidth(columns.length, index, widths);
     });
 
     doc.moveDown(1.4);
     doc.fillColor(REPORT_COLORS.text);
 }
 
-function renderTableRow(doc, columns) {
+function renderTableRow(doc, columns, widths = null) {
     ensurePageSpace(doc, 18);
     const rowTop = doc.y;
     let x = 48;
 
     columns.forEach((column, index) => {
         doc.fontSize(9).fillColor(REPORT_COLORS.text).text(String(column), x, rowTop, {
-            width: getColumnWidth(columns.length, index),
+            width: getColumnWidth(columns.length, index, widths),
             ellipsis: true
         });
-        x += getColumnWidth(columns.length, index);
+        x += getColumnWidth(columns.length, index, widths);
     });
 
     doc.moveDown(1.2);
 }
 
-function getColumnWidth(columnCount, index) {
+function getColumnWidth(columnCount, index, widths = null) {
+    if (Array.isArray(widths) && widths[index]) {
+        return widths[index];
+    }
+
     if (columnCount === 5) {
         return [55, 120, 120, 85, 110][index];
     }
@@ -335,6 +341,7 @@ async function loadCommands(deviceIds) {
             SELECT
                 device_id,
                 created_at,
+                requested_by,
                 command,
                 status,
                 error_message

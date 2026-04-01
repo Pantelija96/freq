@@ -1,0 +1,18 @@
+[Unit]
+Description=Freq Backend Service
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=freq
+Group=freq
+WorkingDirectory=/opt/freq/backend
+EnvironmentFile=/opt/freq/backend/.env
+ExecStart=/usr/bin/node /opt/freq/backend/src/server.js
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/freq/backend.log
+StandardError=append:/var/log/freq/backend.error.log
+
+[Install]
+WantedBy=multi-user.target

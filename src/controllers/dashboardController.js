@@ -70,9 +70,10 @@ const sendDashboardCommand = async (req, res) => {
 
     try {
         const activeDevices = req.app.locals.activeDevices;
+        const requestedBy = req.auth?.user?.username || null;
         const [result] = await pool.execute(`
-            INSERT INTO commands (device_id, command, payload, status) VALUES (?, ?, ?, 'pending')
-        `, [deviceId, command, JSON.stringify(payload || null)]);
+            INSERT INTO commands (device_id, requested_by, command, payload, status) VALUES (?, ?, ?, ?, 'pending')
+        `, [deviceId, requestedBy, command, JSON.stringify(payload || null)]);
 
         const commandId = result.insertId;
 
