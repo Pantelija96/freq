@@ -129,7 +129,7 @@ CREATE DATABASE freq CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 
 The schema is stored in:
 
-- [frequencies.sql](C:/Users/PC/Desktop/freq/frequencies.sql)
+- frequencies.sql
 
 ### Recommended DB user model
 
@@ -377,7 +377,7 @@ These are intended for local development and testing only.
 
 For Linux installation on a single machine, use:
 
-- [DEPLOYMENT.md](C:/Users/PC/Desktop/freq/deploy/linux-vcenter/DEPLOYMENT.md)
+- deploy/linux-vcenter/DEPLOYMENT.md
 
 That guide covers:
 
