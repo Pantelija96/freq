@@ -44,6 +44,45 @@ async function loginUser(username, password) {
     };
 }
 
+async function changeUserPassword(userId, currentPassword, newPassword) {
+    const mode = config.auth.mode;
+
+    if (mode !== 'local') {
+        throw new Error(`Unsupported auth mode "${mode}". LDAP/AD integration is not implemented yet.`);
+    }
+
+    const numericUserId = Number(userId);
+    if (!numericUserId) {
+        throw new Error('A valid user id is required.');
+    }
+
+    const [rows] = await pool.execute(
+        `SELECT id, password
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [numericUserId]
+    );
+
+    if (!rows.length) {
+        return { ok: false, reason: 'user_not_found' };
+    }
+
+    const validPassword = await verifyStoredPassword(currentPassword, rows[0].password);
+    if (!validPassword) {
+        return { ok: false, reason: 'invalid_current_password' };
+    }
+
+    await pool.execute(
+        `UPDATE users
+         SET password = ?
+         WHERE id = ?`,
+        [hashPassword(newPassword), numericUserId]
+    );
+
+    return { ok: true };
+}
+
 function issueAuthToken(user) {
     if (!config.auth.dashboardSecret) {
         throw new Error('DASHBOARD_SECRET must be configured before issuing auth tokens');
@@ -121,6 +160,7 @@ function safeHexEqual(left, right) {
 
 module.exports = {
     loginUser,
+    changeUserPassword,
     issueAuthToken,
     hashPassword,
     normalizeUsername
