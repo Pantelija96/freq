@@ -1,23 +1,50 @@
 const pool = require('../config/db');
 const logger = require('../utils/logger');
 
+function isMissingRequestedByColumnsError(error) {
+    return error && (
+        error.code === 'ER_BAD_FIELD_ERROR'
+        || /requested_by_user_id|requested_by_label/i.test(error.message || '')
+    );
+}
+
 const sendCommand = async (deviceId, command, payload = null, activeDevices, options = {}) => {
     const active = activeDevices.get(deviceId);
     const requestedByUserId = options.requestedByUserId || null;
     const requestedByLabel = options.requestedByLabel || null;
+    const fallbackRequestedBy = requestedByLabel || (requestedByUserId ? String(requestedByUserId) : null);
+    let result;
 
-    const [result] = await pool.execute(
-        `INSERT INTO commands (device_id, session_id, requested_by_user_id, requested_by_label, command, payload, status)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-        [
-            deviceId,
-            active?.sessionId ?? null,
-            requestedByUserId,
-            requestedByLabel,
-            command,
-            JSON.stringify(payload || null)
-        ]
-    );
+    try {
+        [result] = await pool.execute(
+            `INSERT INTO commands (device_id, session_id, requested_by_user_id, requested_by_label, command, payload, status)
+             VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+            [
+                deviceId,
+                active?.sessionId ?? null,
+                requestedByUserId,
+                requestedByLabel,
+                command,
+                JSON.stringify(payload || null)
+            ]
+        );
+    } catch (error) {
+        if (!isMissingRequestedByColumnsError(error)) {
+            throw error;
+        }
+
+        [result] = await pool.execute(
+            `INSERT INTO commands (device_id, session_id, requested_by, command, payload, status)
+             VALUES (?, ?, ?, ?, ?, 'pending')`,
+            [
+                deviceId,
+                active?.sessionId ?? null,
+                fallbackRequestedBy,
+                command,
+                JSON.stringify(payload || null)
+            ]
+        );
+    }
 
     const commandId = result.insertId;
 

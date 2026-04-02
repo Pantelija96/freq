@@ -336,28 +336,59 @@ async function loadCommands(deviceIds) {
         return new Map();
     }
 
-    const [rows] = await pool.query(
-        `
-            SELECT
-                c.device_id,
-                c.created_at,
-                COALESCE(
-                    NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
-                    u.username,
-                    c.requested_by_label
-                ) AS requested_by,
-                c.command,
-                c.status,
-                c.error_message
-            FROM commands c
-            LEFT JOIN users u ON u.id = c.requested_by_user_id
-            WHERE c.device_id IN (${deviceIds.map(() => '?').join(', ')})
-            ORDER BY c.device_id ASC, c.created_at DESC
-        `,
-        deviceIds
-    );
+    let rows;
+
+    try {
+        [rows] = await pool.query(
+            `
+                SELECT
+                    c.device_id,
+                    c.created_at,
+                    COALESCE(
+                        NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                        u.username,
+                        c.requested_by_label
+                    ) AS requested_by,
+                    c.command,
+                    c.status,
+                    c.error_message
+                FROM commands c
+                LEFT JOIN users u ON u.id = c.requested_by_user_id
+                WHERE c.device_id IN (${deviceIds.map(() => '?').join(', ')})
+                ORDER BY c.device_id ASC, c.created_at DESC
+            `,
+            deviceIds
+        );
+    } catch (error) {
+        if (!isMissingRequestedByColumnsError(error)) {
+            throw error;
+        }
+
+        [rows] = await pool.query(
+            `
+                SELECT
+                    c.device_id,
+                    c.created_at,
+                    c.requested_by,
+                    c.command,
+                    c.status,
+                    c.error_message
+                FROM commands c
+                WHERE c.device_id IN (${deviceIds.map(() => '?').join(', ')})
+                ORDER BY c.device_id ASC, c.created_at DESC
+            `,
+            deviceIds
+        );
+    }
 
     return groupRowsByDevice(rows);
+}
+
+function isMissingRequestedByColumnsError(error) {
+    return error && (
+        error.code === 'ER_BAD_FIELD_ERROR'
+        || /requested_by_user_id|requested_by_label/i.test(error.message || '')
+    );
 }
 
 function groupRowsByDevice(rows) {

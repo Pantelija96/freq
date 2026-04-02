@@ -72,8 +72,10 @@ const sendDashboardCommand = async (req, res) => {
     try {
         const activeDevices = req.app.locals.activeDevices;
         const requestedByUserId = Number(req.auth?.user?.id || req.auth?.user?.sub) || null;
+        const requestedByLabel = req.auth?.user?.username || null;
         const commandId = await sendCommand(deviceId, command, payload, activeDevices, {
-            requestedByUserId
+            requestedByUserId,
+            requestedByLabel
         });
 
         res.json({ status: 'ok', commandId });

@@ -220,32 +220,61 @@ async function listDeviceCommands(req, res) {
     }
 
     try {
-        const [rows] = await pool.execute(
-            `SELECT
-                c.id,
-                c.session_id,
-                c.requested_by_user_id,
-                c.requested_by_label,
-                COALESCE(
-                    NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
-                    u.username,
-                    c.requested_by_label
-                ) AS requested_by,
-                c.command,
-                c.payload,
-                c.status,
-                c.result,
-                c.error_message,
-                c.created_at,
-                c.updated_at,
-                c.executed_at
-             FROM commands c
-             LEFT JOIN users u ON u.id = c.requested_by_user_id
-             WHERE c.device_id = ?
-             ORDER BY c.id DESC
-             LIMIT ?`,
-            [deviceId, limit]
-        );
+        let rows;
+
+        try {
+            [rows] = await pool.execute(
+                `SELECT
+                    c.id,
+                    c.session_id,
+                    c.requested_by_user_id,
+                    c.requested_by_label,
+                    COALESCE(
+                        NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                        u.username,
+                        c.requested_by_label
+                    ) AS requested_by,
+                    c.command,
+                    c.payload,
+                    c.status,
+                    c.result,
+                    c.error_message,
+                    c.created_at,
+                    c.updated_at,
+                    c.executed_at
+                 FROM commands c
+                 LEFT JOIN users u ON u.id = c.requested_by_user_id
+                 WHERE c.device_id = ?
+                 ORDER BY c.id DESC
+                 LIMIT ?`,
+                [deviceId, limit]
+            );
+        } catch (error) {
+            if (!isMissingRequestedByColumnsError(error)) {
+                throw error;
+            }
+
+            [rows] = await pool.execute(
+                `SELECT
+                    id,
+                    session_id,
+                    requested_by AS requested_by_label,
+                    requested_by,
+                    command,
+                    payload,
+                    status,
+                    result,
+                    error_message,
+                    created_at,
+                    updated_at,
+                    executed_at
+                 FROM commands
+                 WHERE device_id = ?
+                 ORDER BY id DESC
+                 LIMIT ?`,
+                [deviceId, limit]
+            );
+        }
 
         const commands = rows.map((row) => ({
             ...row,
@@ -262,6 +291,13 @@ async function listDeviceCommands(req, res) {
         logger.error('dev_list_device_commands_failed', { deviceId, error: err.message });
         res.status(500).json({ error: 'Failed to load device commands' });
     }
+}
+
+function isMissingRequestedByColumnsError(error) {
+    return error && (
+        error.code === 'ER_BAD_FIELD_ERROR'
+        || /requested_by_user_id|requested_by_label/i.test(error.message || '')
+    );
 }
 
 async function listLogs(req, res) {
