@@ -35,28 +35,28 @@ async function main() {
         await adminConnection.end();
     }
 
-    const appConnection = await mysql.createConnection({
-        host: config.host,
-        port: config.port,
-        user: config.user,
-        password: config.password,
+    const schemaConnection = await mysql.createConnection({
+        host: config.adminHost,
+        port: config.adminPort,
+        user: config.adminUser,
+        password: config.adminPassword,
         database: config.database,
         multipleStatements: true
     });
 
     try {
         console.log('Applying schema from frequencies.sql...');
-        await appConnection.query(schemaSql);
+        await schemaConnection.query(schemaSql);
 
         console.log('Creating default dashboard users...');
-        await insertDefaultUsers(appConnection);
+        await insertDefaultUsers(schemaConnection);
 
         console.log('Database reset completed successfully.');
         console.log('Created users:');
         console.log('  admin / admin');
         console.log('  user / user');
     } finally {
-        await appConnection.end();
+        await schemaConnection.end();
     }
 }
 
