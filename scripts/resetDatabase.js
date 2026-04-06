@@ -1,10 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const dotenv = require('dotenv');
 const mysql = require('mysql2/promise');
-
-const { hashPassword, normalizeUsername } = require('../src/services/userAuthService');
 
 dotenv.config({
     path: path.resolve(__dirname, '../.env')
@@ -121,6 +120,16 @@ async function insertDefaultUsers(connection) {
 
 function escapeIdentifier(value) {
     return `\`${String(value).replaceAll('`', '``')}\``;
+}
+
+function hashPassword(plainTextPassword) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(String(plainTextPassword), salt, 64).toString('hex');
+    return `scrypt$${salt}$${hash}`;
+}
+
+function normalizeUsername(username) {
+    return String(username || '').trim().toLowerCase();
 }
 
 main().catch((error) => {
