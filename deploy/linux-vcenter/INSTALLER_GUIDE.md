@@ -118,6 +118,9 @@ The script needs a few deployment-specific values.
 
 ### Optional arguments
 
+- `--db-bootstrap-user`
+- `--db-bootstrap-password`
+- `--use-sudo-mysql`
 - `--frontend-repo-url`
 - `--backend-dir`
 - `--frontend-dir`
@@ -145,6 +148,7 @@ Unless changed by arguments, the installer uses:
 - db admin user: `freq_admin`
 - db app user: `freq_app`
 - db admin host pattern: `127.0.0.1`
+- db bootstrap user: `root`
 - backend port: `3000`
 - frontend dev port: `5173`
 - system user: `freq`
@@ -212,6 +216,7 @@ sudo chmod +x deploy/linux-vcenter/install-single-host.sh
 
 sudo deploy/linux-vcenter/install-single-host.sh \
   --install-packages \
+  --use-sudo-mysql \
   --public-host freq.com \
   --backend-port 3000 \
   --frontend-dev-port 5173 \
@@ -219,6 +224,19 @@ sudo deploy/linux-vcenter/install-single-host.sh \
   --db-app-password 'CHANGE_ME_APP_DB_PASS' \
   --dashboard-secret 'CHANGE_ME_DASHBOARD_SECRET' \
   --provision-secret 'CHANGE_ME_PROVISION_SECRET'
+```
+
+If the Linux machine uses MySQL socket authentication for administrative access, use:
+
+```bash
+--use-sudo-mysql
+```
+
+If the machine instead requires an explicit MySQL admin password, use:
+
+```bash
+--db-bootstrap-user root \
+--db-bootstrap-password 'YOUR_MYSQL_ROOT_PASSWORD'
 ```
 
 ## 9. What the script writes
@@ -412,6 +430,28 @@ Fix:
 
 - rerun with `--install-packages`
 - or install MySQL manually
+
+### Problem: `ERROR 1045 (28000): Access denied for user 'root'@'localhost'`
+
+Cause:
+
+- MySQL root is not configured for passwordless CLI access
+- the machine may be using socket authentication or password-based root auth
+
+Fix:
+
+- rerun the installer with:
+
+```bash
+--use-sudo-mysql
+```
+
+or, if the machine uses password-based MySQL root access:
+
+```bash
+--db-bootstrap-user root \
+--db-bootstrap-password 'YOUR_MYSQL_ROOT_PASSWORD'
+```
 
 ### Problem: `Required command not found: npm`
 

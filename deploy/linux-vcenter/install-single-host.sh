@@ -22,6 +22,9 @@ Required:
   --provision-secret       Device provision secret
 
 Optional:
+  --db-bootstrap-user      MySQL bootstrap/admin user used for initial CREATE DATABASE/USER
+  --db-bootstrap-password  Password for the bootstrap MySQL user
+  --use-sudo-mysql         Use sudo mysql socket authentication for bootstrap SQL
   --frontend-repo-url      Frontend repository URL
   --backend-dir            Backend install directory
   --frontend-dir           Frontend install directory
@@ -81,11 +84,14 @@ SYSTEM_USER="freq"
 INSTALL_PACKAGES="false"
 SKIP_DB_RESET="false"
 SKIP_START="false"
+USE_SUDO_MYSQL="false"
 
 DB_ADMIN_PASSWORD=""
 DB_APP_PASSWORD=""
 DASHBOARD_SECRET=""
 PROVISION_SECRET=""
+DB_BOOTSTRAP_USER="root"
+DB_BOOTSTRAP_PASSWORD=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -102,6 +108,9 @@ while [[ $# -gt 0 ]]; do
     --db-app-password) DB_APP_PASSWORD="$2"; shift 2 ;;
     --dashboard-secret) DASHBOARD_SECRET="$2"; shift 2 ;;
     --provision-secret) PROVISION_SECRET="$2"; shift 2 ;;
+    --db-bootstrap-user) DB_BOOTSTRAP_USER="$2"; shift 2 ;;
+    --db-bootstrap-password) DB_BOOTSTRAP_PASSWORD="$2"; shift 2 ;;
+    --use-sudo-mysql) USE_SUDO_MYSQL="true"; shift ;;
     --backend-port) BACKEND_PORT="$2"; shift 2 ;;
     --frontend-dev-port) FRONTEND_DEV_PORT="$2"; shift 2 ;;
     --system-user) SYSTEM_USER="$2"; shift 2 ;;
@@ -163,8 +172,9 @@ systemctl start mysql
 
 MYSQL_ADMIN_PASSWORD_ESCAPED="$(escape_squote "${DB_ADMIN_PASSWORD}")"
 MYSQL_APP_PASSWORD_ESCAPED="$(escape_squote "${DB_APP_PASSWORD}")"
+MYSQL_BOOTSTRAP_PASSWORD_ESCAPED="$(escape_squote "${DB_BOOTSTRAP_PASSWORD}")"
 
-mysql <<SQL
+MYSQL_SQL=$(cat <<SQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE USER IF NOT EXISTS '${DB_ADMIN_USER}'@'${DB_ADMIN_HOST}' IDENTIFIED BY '${MYSQL_ADMIN_PASSWORD_ESCAPED}';
@@ -179,6 +189,17 @@ ON \`${DB_NAME}\`.* TO '${DB_APP_USER}'@'127.0.0.1';
 
 FLUSH PRIVILEGES;
 SQL
+)
+
+if [[ "${USE_SUDO_MYSQL}" == "true" ]]; then
+  sudo mysql <<< "${MYSQL_SQL}"
+else
+  if [[ -n "${DB_BOOTSTRAP_PASSWORD}" ]]; then
+    mysql -u "${DB_BOOTSTRAP_USER}" -p"${DB_BOOTSTRAP_PASSWORD}" <<< "${MYSQL_SQL}"
+  else
+    mysql -u "${DB_BOOTSTRAP_USER}" <<< "${MYSQL_SQL}"
+  fi
+fi
 
 cat > "${BACKEND_DIR}/.env" <<EOF
 DB_HOST=127.0.0.1
@@ -190,6 +211,8 @@ DB_ADMIN_HOST=127.0.0.1
 DB_ADMIN_PORT=3306
 DB_ADMIN_USER=${DB_ADMIN_USER}
 DB_ADMIN_PASSWORD=${DB_ADMIN_PASSWORD}
+DB_BOOTSTRAP_USER=${DB_BOOTSTRAP_USER}
+DB_BOOTSTRAP_PASSWORD=${DB_BOOTSTRAP_PASSWORD}
 
 PORT=${BACKEND_PORT}
 NODE_ENV=production
