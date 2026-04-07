@@ -132,7 +132,7 @@ require_root
 
 if [[ "${INSTALL_PACKAGES}" == "true" ]]; then
   apt update
-  apt install -y nginx mysql-server git curl ca-certificates
+  apt install -y nginx mysql-server git curl ca-certificates nodejs npm
 fi
 
 require_command git
